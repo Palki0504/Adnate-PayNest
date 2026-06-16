@@ -1,0 +1,227 @@
+# Adnate PayNest - MERN banking application
+# Keep secrets, generated files, customer data, and local runtime artifacts out of Git.
+
+# ---------------------------------------------------------------------------
+# Environment variables and secrets
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+!.env.template
+!.env.sample
+
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.template
+!**/.env.sample
+
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.secret
+*secret*
+*secrets*
+*credential*
+*credentials*
+*api-key*
+*apikey*
+*private-key*
+*service-account*.json
+
+# Local configuration that may contain credentials
+config/local.*
+config/production.*
+server/config/local.*
+server/config/production.*
+client/src/config/local.*
+client/src/config/production.*
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+node_modules/
+**/node_modules/
+
+# ---------------------------------------------------------------------------
+# Builds and deployment output
+# ---------------------------------------------------------------------------
+dist/
+build/
+.next/
+out/
+coverage/
+.nyc_output/
+storybook-static/
+client/dist/
+client/build/
+server/dist/
+server/build/
+
+# ---------------------------------------------------------------------------
+# Logs, runtime files, caches, and temporary files
+# ---------------------------------------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+logs/
+*.pid
+*.pid.lock
+*.seed
+*.pid
+
+.cache/
+.parcel-cache/
+.vite/
+.eslintcache
+.stylelintcache
+.turbo/
+.swc/
+.tmp/
+.temp/
+tmp/
+temp/
+cache/
+runtime/
+run/
+
+# ---------------------------------------------------------------------------
+# Testing and reports
+# ---------------------------------------------------------------------------
+coverage/
+test-results/
+playwright-report/
+cypress/screenshots/
+cypress/videos/
+junit.xml
+lcov.info
+
+# ---------------------------------------------------------------------------
+# Customer uploads, KYC, personal data, banking files
+# ---------------------------------------------------------------------------
+uploads/
+upload/
+uploaded/
+documents/
+customer-documents/
+customer_documents/
+customer-data/
+customer_data/
+kyc/
+kyc-documents/
+kyc_documents/
+aadhaar/
+aadhar/
+pan/
+profile-images/
+profileImages/
+profile_pictures/
+avatars/
+
+server/uploads/
+server/upload/
+server/uploaded/
+server/documents/
+server/customer-documents/
+server/customer_documents/
+server/customer-data/
+server/customer_data/
+server/kyc/
+server/kyc-documents/
+server/kyc_documents/
+server/aadhaar/
+server/aadhar/
+server/pan/
+server/profile-images/
+server/profileImages/
+server/profile_pictures/
+server/avatars/
+
+client/uploads/
+client/upload/
+client/customer-documents/
+client/customer_data/
+client/kyc/
+client/profile-images/
+client/profileImages/
+
+# Sensitive exported customer/banking records
+exports/
+reports/
+downloads/
+backups/
+dumps/
+db/
+database/
+*.dump
+*.bak
+*.backup
+*.bson
+*.archive
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+
+# Allow deliberate spreadsheet templates if added later
+!templates/**/*.xlsx
+!templates/**/*.xls
+!templates/**/*.pdf
+!templates/**/*.doc
+!templates/**/*.docx
+
+# ---------------------------------------------------------------------------
+# OS and editor files
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ---------------------------------------------------------------------------
+# Package manager and tool artifacts
+# ---------------------------------------------------------------------------
+.npm/
+.yarn/
+.pnp.*
+pnpm-store/
+
+# ---------------------------------------------------------------------------
+# Misc generated artifacts
+# ---------------------------------------------------------------------------
+*.tgz
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+*.tmp
+*.temp
+*.orig
+*.rej
