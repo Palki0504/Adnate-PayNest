@@ -172,7 +172,6 @@ loanSchema.pre('save', function (next) {
 // Indexes
 loanSchema.index({ userId: 1, status: 1 });
 loanSchema.index({ status: 1, nextEMIDueDate: 1 });
-loanSchema.index({ loanNumber: 1 });
 loanSchema.index(
   { userId: 1, linkedAccountId: 1, loanType: 1, amount: 1, tenure: 1, status: 1 },
   {
