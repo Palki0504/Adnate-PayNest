@@ -33,7 +33,7 @@ const SEED_PASSWORD2 = getRequiredSeedValue('SEED_CUSTOMER_2_PASSWORD');
 const MANAGER_EMAIL = process.env.SEED_MANAGER_EMAIL || 'manager@paynest.test';
 const MANAGER_PASSWORD = getRequiredSeedValue('SEED_MANAGER_PASSWORD');
 
-const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || 'admin@paynest.test';
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL || 'mayankk@adnatesolutions.com';
 const ADMIN_PASSWORD = getRequiredSeedValue('SEED_ADMIN_PASSWORD');
 
 const categories = ['food', 'shopping', 'utilities', 'travel', 'entertainment', 'salary', 'transfer', 'other'];

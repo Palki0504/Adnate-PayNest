@@ -4,6 +4,7 @@ const OverdraftLog = require('../models/OverdraftLog');
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const { generateTransactionId } = require('../utils/transferHelper');
+const { notifySuccessfulOverdraftUsage } = require('../utils/overdraftEmailNotifier');
 
 const MAX_MONTHLY_OD_USES = 3;
 const formatINR = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN')}`;
@@ -178,6 +179,12 @@ const transferOverdraft = async (req, res, next) => {
         Notification.create({ userId: req.user._id, title: 'Overdraft Transfer Successful', message: `${formatINR(amount)} was transferred to ${receiverUser.name}.`, type: 'transaction' }),
         Notification.create({ userId: receiverUser._id, title: 'Overdraft Transfer Received', message: `You received ${formatINR(amount)} from ${req.user.name}.`, type: 'transaction' }),
       ]).catch(() => {});
+      setImmediate(() => notifySuccessfulOverdraftUsage({
+        user: req.user,
+        account: updatedSender,
+        amountUsed: amount,
+        transactionId: transaction.reference || transaction._id,
+      }).catch(() => {}));
 
       return res.status(200).json({
         success: true,

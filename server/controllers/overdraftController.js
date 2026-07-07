@@ -2,6 +2,7 @@
 const OverdraftLog = require('../models/OverdraftLog');
 const Notification = require('../models/Notification');
 const User = require('../models/User');
+const { notifySuccessfulOverdraftUsage } = require('../utils/overdraftEmailNotifier');
 
 const MAX_MONTHLY_OD_USES = 3;
 
@@ -469,6 +470,12 @@ const useOverdraft = async (req, res, next) => {
     });
 
     await account.save();
+    setImmediate(() => notifySuccessfulOverdraftUsage({
+      user: req.user,
+      account,
+      amountUsed: requestedAmount,
+      transactionId: transaction.reference || transaction._id,
+    }).catch(() => {}));
 
     res.status(200).json({ success: true, message: `Successfully used ${formatINR(requestedAmount)} from overdraft`, account: accountPayload(account) });
   } catch (err) {

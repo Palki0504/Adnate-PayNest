@@ -78,4 +78,17 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { protect, authorize };
+const requireKycApproved = (req, res, next) => {
+  if (req.user.role !== 'customer') return next();
+  if (req.user.profileCompleted && req.user.kycStatus === 'Approved') return next();
+
+  return res.status(403).json({
+    success: false,
+    code: 'KYC_REQUIRED',
+    message: 'Complete your profile and wait for KYC verification to access this feature.',
+    kycStatus: req.user.kycStatus || 'Not Started',
+    profileCompleted: !!req.user.profileCompleted,
+  });
+};
+
+module.exports = { protect, authorize, requireKycApproved };

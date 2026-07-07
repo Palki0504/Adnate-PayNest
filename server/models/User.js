@@ -63,6 +63,47 @@ const userAccountSchema = new mongoose.Schema({
   },
 }, { _id: false });
 
+const kycDocumentSchema = new mongoose.Schema({
+  type: {
+    type: String,
+    trim: true,
+  },
+  label: {
+    type: String,
+    trim: true,
+  },
+  originalName: {
+    type: String,
+    trim: true,
+  },
+  storedName: {
+    type: String,
+    trim: true,
+  },
+  path: {
+    type: String,
+    trim: true,
+    select: false,
+  },
+  mimeType: {
+    type: String,
+    trim: true,
+  },
+  size: {
+    type: Number,
+    default: 0,
+  },
+  uploadedAt: {
+    type: Date,
+    default: Date.now,
+  },
+  status: {
+    type: String,
+    enum: ['Uploaded', 'Pending Review', 'Approved', 'Rejected'],
+    default: 'Uploaded',
+  },
+}, { _id: true });
+
 const userSchema = new mongoose.Schema(
   {
     customerId: {
@@ -149,6 +190,46 @@ const userSchema = new mongoose.Schema(
       enum: ['Male', 'Female', 'Other', 'Prefer not to say', ''],
       default: '',
     },
+    maritalStatus: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    occupation: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    employmentType: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    annualIncome: {
+      type: Number,
+      min: 0,
+      default: 0,
+    },
+    nationality: {
+      type: String,
+      trim: true,
+      default: 'Indian',
+    },
+    address: {
+      houseFlatNumber: { type: String, trim: true, default: '' },
+      street: { type: String, trim: true, default: '' },
+      area: { type: String, trim: true, default: '' },
+      city: { type: String, trim: true, default: '' },
+      state: { type: String, trim: true, default: '' },
+      pinCode: { type: String, trim: true, default: '' },
+      country: { type: String, trim: true, default: 'India' },
+    },
+    nomineeDetails: {
+      name: { type: String, trim: true, default: '' },
+      relationship: { type: String, trim: true, default: '' },
+      dateOfBirth: { type: Date },
+      contactNumber: { type: String, trim: true, default: '' },
+    },
     lastLogin: {
       type: Date,
     },
@@ -217,6 +298,81 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    profileCompleted: {
+      type: Boolean,
+      default: false,
+    },
+    kycStatus: {
+      type: String,
+      enum: ['Not Started', 'Pending', 'Approved', 'Rejected'],
+      default: 'Not Started',
+    },
+    kycSubmittedAt: {
+      type: Date,
+    },
+    kycApprovedAt: {
+      type: Date,
+    },
+    kycApprovedBy: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    kycRejectedAt: {
+      type: Date,
+    },
+    kycRejectedBy: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    kycRejectedReason: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+    kycChangeSummary: {
+      type: [{
+        field: { type: String, trim: true },
+        label: { type: String, trim: true },
+        oldValue: { type: String, trim: true, default: '' },
+        newValue: { type: String, trim: true, default: '' },
+      }],
+      default: [],
+    },
+    kycChangeRequiresVerification: {
+      type: Boolean,
+      default: false,
+    },
+    kycChangeSubmittedAt: {
+      type: Date,
+    },
+    profileChangeRequest: {
+      status: {
+        type: String,
+        enum: ['None', 'Pending', 'Approved', 'Rejected'],
+        default: 'None',
+      },
+      changes: {
+        type: [{
+          field: { type: String, trim: true },
+          label: { type: String, trim: true },
+          oldValue: { type: String, trim: true, default: '' },
+          newValue: { type: String, trim: true, default: '' },
+          newRawValue: mongoose.Schema.Types.Mixed,
+        }],
+        default: [],
+      },
+      submittedAt: { type: Date },
+      reviewedAt: { type: Date },
+      reviewedBy: { type: String, trim: true, default: '' },
+      remarks: { type: String, trim: true, default: '' },
+    },
+    documents: {
+      type: [kycDocumentSchema],
+      default: [],
+      select: false,
+    },
     // ─── Signup Approval Workflow ────────────────────────────────────────────
     approvalStatus: {
       type: String,
@@ -284,6 +440,8 @@ userSchema.post('save', async function (user) {
 userSchema.post('findOneAndUpdate', async function (user) {
   await syncUserProfileToAccounts(user);
 });
+
+userSchema.index({ role: 1, approvalStatus: 1, createdAt: -1 });
 
 // Instance method: compare password
 userSchema.methods.comparePassword = async function (candidatePassword) {

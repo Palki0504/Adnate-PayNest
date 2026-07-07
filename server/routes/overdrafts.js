@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { protect } = require('../middleware/auth');
+const { protect, requireKycApproved } = require('../middleware/auth');
 const controller = require('../controllers/overdraftController');
 const { transferOverdraft } = require('../controllers/overdraftTransferController');
 
 // All customer routes require authentication
 router.use(protect);
+router.use(requireKycApproved);
 
 // Customer: get their own overdraft details (summary)
 router.get('/my-details', controller.getCustomerOverdraftDetails);

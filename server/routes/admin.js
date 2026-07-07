@@ -11,11 +11,20 @@ const {
   getSystemAnalytics,
   getAllAccounts,
   getAllCustomers,
+  getCustomerRegistrationYears,
+  downloadCustomerMonthlyReport,
   createUserValidation,
 } = require('../controllers/adminController');
 const { getBusinessRules, createBusinessRule, updateBusinessRule, deleteBusinessRule, createRuleValidation, updateRuleValidation } = require('../controllers/businessRulesController');
 const { getAuditLogs } = require('../controllers/auditLogController');
 const { getSettings, updateSettings } = require('../controllers/settingsController');
+const {
+  getAdminCustomerLoans,
+  getAdminEMIRecords,
+  downloadAdminCustomerLoansReport,
+  downloadAdminCustomerLoansMonthlyReport,
+  downloadAdminEMIMonthlyReport,
+} = require('../controllers/loanController');
 const { protect, authorize } = require('../middleware/auth');
 const validateRequest = require('../middleware/validate');
 
@@ -28,6 +37,11 @@ router.put('/users/:id/toggle-status', protect, authorize('admin'), toggleUserSt
 router.get('/transactions', protect, authorize('admin'), getAllTransactions);
 router.post('/notifications/send', protect, authorize('admin'), sendSystemNotification);
 router.get('/analytics', protect, authorize('admin'), getSystemAnalytics);
+router.get('/loans/customer-loans', protect, authorize('admin'), getAdminCustomerLoans);
+router.get('/loans/customer-loans/report', protect, authorize('admin'), downloadAdminCustomerLoansReport);
+router.get('/loans/customer-loans/monthly-report', protect, authorize('admin'), downloadAdminCustomerLoansMonthlyReport);
+router.get('/loans/emis', protect, authorize('admin'), getAdminEMIRecords);
+router.get('/loans/emis/monthly-report', protect, authorize('admin'), downloadAdminEMIMonthlyReport);
 
 // ─── Business Rules ────────────────────────────────────────────────────────────
 router.get('/business-rules', protect, authorize('admin'), getBusinessRules);
@@ -44,6 +58,8 @@ router.put('/settings', protect, authorize('admin'), updateSettings);
 
 // ─── Admin + Manager routes ────────────────────────────────────────────────────
 router.get('/accounts', protect, authorize('admin', 'manager'), getAllAccounts);
+router.get('/customers/years', protect, authorize('admin', 'manager'), getCustomerRegistrationYears);
+router.get('/customers/monthly-report', protect, authorize('admin', 'manager'), downloadCustomerMonthlyReport);
 router.get('/customers', protect, authorize('admin', 'manager'), getAllCustomers);
 
 module.exports = router;

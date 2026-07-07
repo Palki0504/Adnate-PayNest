@@ -6,16 +6,16 @@ const {
   createAccount,
   createAccountValidation,
 } = require('../controllers/accountController');
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, requireKycApproved } = require('../middleware/auth');
 const validateRequest = require('../middleware/validate');
 
 // GET /api/accounts
-router.get('/', protect, authorize('customer'), getMyAccounts);
+router.get('/', protect, authorize('customer'), requireKycApproved, getMyAccounts);
 
 // POST /api/accounts
-router.post('/', protect, authorize('customer'), createAccountValidation, validateRequest, createAccount);
+router.post('/', protect, authorize('customer'), requireKycApproved, createAccountValidation, validateRequest, createAccount);
 
 // GET /api/accounts/:id
-router.get('/:id', protect, authorize('customer'), getAccountById);
+router.get('/:id', protect, authorize('customer'), requireKycApproved, getAccountById);
 
 module.exports = router;

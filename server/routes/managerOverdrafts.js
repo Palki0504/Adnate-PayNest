@@ -26,6 +26,8 @@ router.put('/approvals/:id/approve', approvalController.approveRequest);
 router.put('/approvals/:id/reject', approvalController.rejectRequest);
 
 // ─── Customer monitoring ──────────────────────────────────────────────────────
+router.get('/customers/years', adminController.getCustomerRegistrationYears);
+router.get('/customers/monthly-report', adminController.downloadCustomerMonthlyReport);
 router.get('/customers', adminController.getAllCustomers);
 router.get('/message-customers', notificationController.getManagerMessageCustomers);
 router.post('/notifications/send-message', notificationController.sendManagerCustomerMessage);

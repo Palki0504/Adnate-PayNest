@@ -127,6 +127,7 @@ profile_pictures/
 avatars/
 
 server/uploads/
+server/private_uploads/
 server/upload/
 server/uploaded/
 server/documents/

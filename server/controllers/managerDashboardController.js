@@ -6,6 +6,10 @@ const AccountTypeRequest = require('../models/AccountTypeRequest');
 const TransferLimitRequest = require('../models/TransferLimitRequest');
 const Notification = require('../models/Notification');
 const Classification = require('../models/Classification');
+const Loan = require('../models/Loan');
+const LoanApplication = require('../models/LoanApplication');
+const FixedDeposit = require('../models/FixedDeposit');
+const RecurringDeposit = require('../models/RecurringDeposit');
 
 const monthLabel = (date) => date.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
 
@@ -35,11 +39,17 @@ const getManagerDashboard = async (req, res, next) => {
       transferApprovalPending,
       transferLimitPending,
       accountTypePending,
+      loanApplicationPending,
       accountTypeCounts,
+      activeLoanAccounts,
+      activeFDAccounts,
+      activeRDAccounts,
+      totalManagers,
       monthlyTransactions,
       customerClassifications,
       classificationDefinitions,
       latestNotifications,
+      recentTransactions,
     ] = await Promise.all([
       User.countDocuments({ role: 'customer', approvalStatus: 'approved' }),
       Account.countDocuments({ status: 'active' }),
@@ -52,10 +62,15 @@ const getManagerDashboard = async (req, res, next) => {
       ApprovalRequest.countDocuments({ status: 'pending' }),
       TransferLimitRequest.countDocuments({ status: 'pending' }),
       AccountTypeRequest.countDocuments({ status: 'Pending' }),
+      LoanApplication.countDocuments({ status: { $in: ['Submitted', 'Under Review', 'More Info Required'] } }),
       Account.aggregate([
         { $match: { status: 'active' } },
         { $group: { _id: '$accountType', count: { $sum: 1 } } },
       ]),
+      Loan.countDocuments({ status: { $in: ['Approved', 'Disbursed'] } }),
+      FixedDeposit.countDocuments({ status: 'Active' }),
+      RecurringDeposit.countDocuments({ status: 'Active' }),
+      User.countDocuments({ role: 'manager', isActive: true }),
       Transaction.aggregate([
         { $match: { createdAt: { $gte: trendStart } } },
         {
@@ -78,9 +93,52 @@ const getManagerDashboard = async (req, res, next) => {
         .sort({ createdAt: -1 })
         .limit(6)
         .lean(),
+      Transaction.aggregate([
+        { $sort: { createdAt: -1 } },
+        { $limit: 5 },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'userId',
+            foreignField: '_id',
+            as: 'customer',
+          },
+        },
+        { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'accounts',
+            localField: 'toAccount',
+            foreignField: '_id',
+            as: 'toAccountDoc',
+          },
+        },
+        { $unwind: { path: '$toAccountDoc', preserveNullAndEmptyArrays: true } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'toAccountDoc.userId',
+            foreignField: '_id',
+            as: 'receiverCustomer',
+          },
+        },
+        { $unwind: { path: '$receiverCustomer', preserveNullAndEmptyArrays: true } },
+        {
+          $project: {
+            _id: 1,
+            reference: 1,
+            customerName: { $ifNull: ['$customer.name', '$receiverCustomer.name'] },
+            transactionType: '$type',
+            accountNumber: { $ifNull: ['$fromAccountNumber', '$toAccountNumber'] },
+            amount: 1,
+            status: 1,
+            createdAt: 1,
+          },
+        },
+      ]),
     ]);
 
-    const pendingApprovals = transferApprovalPending + transferLimitPending + accountTypePending;
+    const pendingApprovals = transferApprovalPending + transferLimitPending + accountTypePending + loanApplicationPending;
 
     const accountTypes = accountTypeCounts.reduce(
       (acc, item) => ({ ...acc, [item._id || 'unknown']: item.count }),
@@ -156,12 +214,20 @@ const getManagerDashboard = async (req, res, next) => {
           totalActiveAccounts,
           pendingApprovals,
           activeOverdraftAccounts,
+          totalActiveLoanAccounts: activeLoanAccounts,
+          totalActiveRDAccounts: activeRDAccounts,
+          totalActiveFDAccounts: activeFDAccounts,
           totalTransactions,
+          totalSavingsAccounts: accountTypes.savings || 0,
+          totalCurrentAccounts: accountTypes.current || 0,
+          totalSalaryAccounts: accountTypes.salary || 0,
+          totalManagers,
         },
         pendingBreakdown: {
           transferApprovals: transferApprovalPending,
           transferLimitRequests: transferLimitPending,
           accountTypeRequests: accountTypePending,
+          loanApplications: loanApplicationPending,
         },
         monthlyTransactions: monthlyTrend,
         classificationDistribution,
@@ -172,6 +238,7 @@ const getManagerDashboard = async (req, res, next) => {
         },
         notifications,
         hasMoreNotifications: latestNotifications.length > 5,
+        recentTransactions,
       },
     });
   } catch (error) {

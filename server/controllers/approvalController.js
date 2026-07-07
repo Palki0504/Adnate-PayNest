@@ -2,6 +2,8 @@ const ApprovalRequest = require('../models/ApprovalRequest');
 const Transaction = require('../models/Transaction');
 const Account = require('../models/Account');
 const Notification = require('../models/Notification');
+const User = require('../models/User');
+const { notifySuccessfulOverdraftUsage } = require('../utils/overdraftEmailNotifier');
 
 // ─── Helper: Create notification ─────────────────────────────────────────────
 const createNotification = async (userId, title, message, type = 'approval', priority = 'high') => {
@@ -94,6 +96,7 @@ const approveRequest = async (req, res, next) => {
     }
 
     const amount = approval.amount;
+    let overdraftUsage = null;
 
     // Execute the actual transfer
     if (approval.transferType === 'own_account') {
@@ -129,13 +132,14 @@ const approveRequest = async (req, res, next) => {
         const odAmount = amount - fromAccount.balance;
         fromAccount.overdraftUsed += odAmount;
         fromAccount.balance = 0;
+        overdraftUsage = { account: fromAccount, amountUsed: odAmount };
       } else {
         fromAccount.balance -= amount;
       }
       toAccount.balance += amount;
       await Promise.all([fromAccount.save(), toAccount.save()]);
 
-      await Transaction.create({
+      const transaction = await Transaction.create({
         userId: approval.customerId,
         fromAccount: fromAccount._id,
         toAccount: toAccount._id,
@@ -149,6 +153,7 @@ const approveRequest = async (req, res, next) => {
         reference: `TXN${Date.now()}${Math.floor(Math.random() * 10000)}`,
         balance_after: fromAccount.balance,
       });
+      if (overdraftUsage) overdraftUsage.transactionId = transaction.reference || transaction._id;
     } else {
       // Beneficiary transfer
       const fromAccount = await Account.findById(approval.fromAccountId);
@@ -178,12 +183,13 @@ const approveRequest = async (req, res, next) => {
         const odAmount = amount - fromAccount.balance;
         fromAccount.overdraftUsed += odAmount;
         fromAccount.balance = 0;
+        overdraftUsage = { account: fromAccount, amountUsed: odAmount };
       } else {
         fromAccount.balance -= amount;
       }
       await fromAccount.save();
 
-      await Transaction.create({
+      const transaction = await Transaction.create({
         userId: approval.customerId,
         fromAccount: fromAccount._id,
         fromAccountNumber: fromAccount.accountNumber,
@@ -196,6 +202,7 @@ const approveRequest = async (req, res, next) => {
         reference: `TXN${Date.now()}${Math.floor(Math.random() * 10000)}`,
         balance_after: fromAccount.balance,
       });
+      if (overdraftUsage) overdraftUsage.transactionId = transaction.reference || transaction._id;
     }
 
     // Mark as approved
@@ -212,6 +219,21 @@ const approveRequest = async (req, res, next) => {
       'approval',
       'high'
     );
+    if (overdraftUsage) {
+      setImmediate(async () => {
+        try {
+          const customer = await User.findById(approval.customerId);
+          await notifySuccessfulOverdraftUsage({
+            user: customer,
+            account: overdraftUsage.account,
+            amountUsed: overdraftUsage.amountUsed,
+            transactionId: overdraftUsage.transactionId,
+          });
+        } catch (error) {
+          console.error('Approved-transfer overdraft email failed:', error.message);
+        }
+      });
+    }
 
     res.status(200).json({ success: true, message: 'Transfer approved and executed successfully.' });
   } catch (error) {

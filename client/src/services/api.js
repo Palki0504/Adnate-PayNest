@@ -1,7 +1,39 @@
 import axios from 'axios';
 
-const ENV_API_BASE_URL = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const LOCAL_API_BASE_URL = 'http://localhost:5000';
+const ENV_API_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
+  import.meta.env.VITE_BACKEND_URL ||
+  ''
+).trim();
 const ENV_API_BASE_PATH = import.meta.env.VITE_API_BASE_PATH || '/api';
+
+const isBrowserLocalhost = () => (
+  typeof window !== 'undefined' &&
+  ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+);
+
+const isLocalApiUrl = (url) => /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(?:\/|$)/i.test(url);
+
+const getApiBaseUrl = () => {
+  if (ENV_API_BASE_URL) {
+    if (import.meta.env.PROD && isLocalApiUrl(ENV_API_BASE_URL)) {
+      throw new Error(
+        'Production frontend is configured with a localhost API URL. Set VITE_API_BASE_URL to the deployed backend URL in Netlify.'
+      );
+    }
+    return ENV_API_BASE_URL;
+  }
+
+  if (import.meta.env.DEV || isBrowserLocalhost()) {
+    return LOCAL_API_BASE_URL;
+  }
+
+  throw new Error(
+    'Missing production API URL. Set VITE_API_BASE_URL or VITE_API_URL to the deployed backend URL.'
+  );
+};
 
 const normalizeUrl = (baseUrl, basePath) => {
   const normalizedBase = baseUrl.trim().replace(/\/+$/, '');
@@ -21,7 +53,7 @@ const normalizeUrl = (baseUrl, basePath) => {
   return `${normalizedBase}${normalizedPath}`;
 };
 
-const BASE_URL = normalizeUrl(ENV_API_BASE_URL, ENV_API_BASE_PATH);
+const BASE_URL = normalizeUrl(getApiBaseUrl(), ENV_API_BASE_PATH);
 
 // ─── Axios Instance ───────────────────────────────────────────────────────────
 const api = axios.create({
@@ -83,6 +115,21 @@ export const authAPI = {
 export const userAPI = {
   getProfile: () => api.get('/users/profile'),
   updateProfile: (data) => api.put('/users/profile', data),
+  submitKyc: (data) => api.post('/users/kyc/submit', data, { timeout: 60000 }),
+  getMyKycDocument: (documentId, download = false) =>
+    api.get(`/users/kyc/documents/${documentId}`, {
+      params: download ? { download: true } : undefined,
+      responseType: 'blob',
+    }),
+  getKycRequests: (params) => api.get('/users/kyc/requests', { params }),
+  reviewKyc: (id, data) => api.put(`/users/kyc/${id}/review`, data),
+  getProfileChangeRequests: (params) => api.get('/users/profile-change-requests', { params }),
+  reviewProfileChangeRequest: (id, data) => api.put(`/users/profile-change-requests/${id}/review`, data),
+  getKycDocument: (customerId, documentId, download = false) =>
+    api.get(`/users/kyc/${customerId}/documents/${documentId}`, {
+      params: download ? { download: true } : undefined,
+      responseType: 'blob',
+    }),
   changePassword: (data) => api.put('/users/change-password', data),
 };
 
@@ -98,6 +145,10 @@ export const accountAPI = {
   addBeneficiary: (data) => api.post('/beneficiaries', data),
   updateBeneficiary: (id, data) => api.put(`/beneficiaries/${id}`, data),
   deleteBeneficiary: (id) => api.delete(`/beneficiaries/${id}`),
+};
+
+export const customerDashboardAPI = {
+  getMain: () => api.get('/customer/dashboard'),
 };
 
 export const accountTypeRequestAPI = {
@@ -223,6 +274,8 @@ export const managerAPI = {
   getOverdraftAccounts:        (params)       => api.get('/manager/overdrafts/accounts', { params }),
   // Customers
   getCustomers: (params) => api.get('/manager/customers', { params }),
+  getCustomerYears: () => api.get('/manager/customers/years'),
+  downloadCustomerMonthlyReport: (params) => api.get('/manager/customers/monthly-report', { params, responseType: 'blob' }),
   getMessageCustomers: (params) =>
     api.get('/manager/message-customers', { params }).catch((err) => {
       const isMissingRoute =
@@ -248,6 +301,95 @@ export const transferLimitAPI = {
   getPendingRequests: () => api.get('/transfer-limits/pending'),
   approveRequest: (id, data) => api.put(`/transfer-limits/${id}/approve`, data),
   rejectRequest: (id, data) => api.put(`/transfer-limits/${id}/reject`, data),
+};
+
+// ─── Loan API ───────────────────────────────────────────────────────────────
+export const loanAPI = {
+  // Customer endpoints
+  apply: (data) => api.post('/loans/apply', data),
+  getMyLoans: (params) => api.get('/loans/my-loans', { params }),
+  getDetails: (id) => api.get(`/loans/${id}`),
+  getEMIHistory: (id) => api.get(`/loans/${id}/emi-history`),
+  payEMI: (id, emiId, accountId) => api.post(`/loans/${id}/emis/${emiId}/pay`, { accountId }),
+  makePartPayment: (id, data) => api.post(`/loans/${id}/part-payment`, data),
+  getFullRepaymentQuote: (id) => api.get(`/loans/${id}/full-repayment-quote`),
+  foreclose: (id, data) => api.post(`/loans/${id}/foreclose`, data),
+  closeFullLoan: (id, data) => api.post(`/loans/${id}/full-repayment`, data),
+  respondInfo: (id, data) => api.post(`/loans/${id}/respond-info`, data),
+  calculateEMI: (data) => api.post('/loans/calculate-emi', data),
+
+  // Manager endpoints
+  getManagerRequests: (params) => api.get('/loans/manager/requests', { params }),
+  reviewLoan: (id, data) => api.put(`/loans/manager/${id}/review`, data),
+  approveLoan: (id, data) => api.put(`/loans/manager/${id}/approve`, data),
+  rejectLoan: (id, data) => api.put(`/loans/manager/${id}/reject`, data),
+  requestInfo: (id, data) => api.put(`/loans/manager/${id}/request-info`, data),
+  getMonitoringStats: () => api.get('/loans/manager/monitoring'),
+
+  // Admin endpoints
+  getAdminAnalytics: () => api.get('/loans/admin/analytics'),
+  getAdminCharts: () => api.get('/loans/admin/charts'),
+  getAdminLoanOverview: () => api.get('/loans/admin/overview'),
+  getConfigs: () => api.get('/loans/admin/configs'),
+  createConfig: (data) => api.post('/loans/admin/configs', data),
+  updateConfig: (data) => (data?._id ? api.put(`/loans/admin/configs/${data._id}`, data) : api.put('/loans/admin/configs', data)),
+  deleteConfig: (id) => api.delete(`/loans/admin/configs/${id}`),
+  getAdminCustomerLoans: (params) => api.get('/admin/loans/customer-loans', { params }),
+  downloadAdminCustomerLoansReport: (params) => api.get('/admin/loans/customer-loans/report', { params, responseType: 'blob' }),
+  downloadAdminCustomerLoansMonthlyReport: (month) => api.get('/admin/loans/customer-loans/monthly-report', { params: { month }, responseType: 'blob' }),
+  getAdminEMIRecords: (params) => api.get('/admin/loans/emis', { params }),
+  downloadAdminEMIReport: (params) => api.get('/loans/admin/emis/report', { params, responseType: 'blob' }),
+  downloadAdminEMIMonthlyReport: (month) => api.get('/admin/loans/emis/monthly-report', { params: { month }, responseType: 'blob' }),
+  getDelinquentReport: () => api.get('/loans/admin/delinquent'),
+};
+
+export const loanApplicationAPI = {
+  getBootstrap: () => api.get('/loan-applications/bootstrap'),
+  saveDraft: (data) => api.put('/loan-applications/draft', data),
+  submit: (data) => api.post('/loan-applications', data, { timeout: 60000 }),
+  getMine: () => api.get('/loan-applications/mine'),
+  getManagerApplications: (params) => api.get('/loan-applications/manager', { params }),
+  getDetails: (id) => api.get(`/loan-applications/${id}`),
+  getDocument: (applicationId, documentId, download = false) =>
+    api.get(`/loan-applications/${applicationId}/documents/${documentId}`, {
+      params: download ? { download: true } : undefined,
+      responseType: 'blob',
+    }),
+  updateStatus: (id, data) => api.put(`/loan-applications/${id}/status`, data),
+};
+
+export const investmentAPI = {
+  getBootstrap: () => api.get('/investments/bootstrap'),
+  calculateFD: (data) => api.post('/investments/fd/calculate', data),
+  calculateRD: (data) => api.post('/investments/rd/calculate', data),
+  createFD: (data) => api.post('/investments/customer/fds', data),
+  getMyFDs: () => api.get('/investments/customer/fds'),
+  getFDWithdrawalPreview: (id) => api.get(`/investments/customer/fds/${id}/withdrawal-preview`),
+  requestFDWithdrawal: (id, data) => api.post(`/investments/customer/fds/${id}/withdrawal`, data),
+  updateFDRenewal: (id, data) => api.put(`/investments/customer/fds/${id}/renewal`, data),
+  requestFDRenewal: (id) => api.post(`/investments/customer/fds/${id}/renewal-request`),
+  createRD: (data) => api.post('/investments/customer/rds', data),
+  getMyRDs: () => api.get('/investments/customer/rds'),
+  getRDClosurePreview: (id) => api.get(`/investments/customer/rds/${id}/closure-preview`),
+  requestRDClosure: (id, data) => api.post(`/investments/customer/rds/${id}/closure`, data),
+  requestRDRenewal: (id) => api.post(`/investments/customer/rds/${id}/renewal-request`),
+  getRDInstallments: (id) => api.get(`/investments/customer/rds/${id}/installments`),
+  getManagerQueue: () => api.get('/investments/manager/queue'),
+  getManagerMonitoring: () => api.get('/investments/manager/monitoring'),
+  decideFD: (id, data) => api.put(`/investments/manager/fds/${id}/decision`, data),
+  decideFDWithdrawal: (id, data) => api.put(`/investments/manager/fds/${id}/withdrawal-decision`, data),
+  decideFDRenewal: (id, data) => api.put(`/investments/manager/fds/${id}/renewal-decision`, data),
+  decideRD: (id, data) => api.put(`/investments/manager/rds/${id}/decision`, data),
+  decideRDClosure: (id, data) => api.put(`/investments/manager/rds/${id}/closure-decision`, data),
+  decideRDRenewal: (id, data) => api.put(`/investments/manager/rds/${id}/renewal-decision`, data),
+  getAdminOverview: () => api.get('/investments/admin/overview'),
+  getAdminClassifications: () => api.get('/investments/admin/classifications'),
+  getAdminRule: (type) => api.get(`/investments/admin/rules/${type}`),
+  saveRule: (data) => api.put('/investments/admin/rules', data),
+  getAdminFDAccounts: (params) => api.get('/investments/admin/fd/accounts', { params }),
+  getAdminRDAccounts: (params) => api.get('/investments/admin/rd/accounts', { params }),
+  downloadMonthlyReport: (product, reportType, params) => api.get(`/investments/admin/${product}/reports/${reportType}`, { params, responseType: 'blob' }),
+  downloadReport: (type) => api.get(`/investments/admin/reports/${type}`, { responseType: 'blob' }),
 };
 
 export default api;

@@ -344,6 +344,26 @@ const login = async (req, res, next) => {
         type: 'alert',
         priority: 'medium',
       }).catch(() => {});
+
+      if (user.role === 'manager') {
+        const admins = await User.find({ role: 'admin', isActive: true }).select('_id');
+        if (admins.length > 0) {
+          const managerId = user.adminId || user._id.toString();
+          await Notification.insertMany(
+            admins.map((admin) => ({
+              userId: admin._id,
+              title: 'Manager Login',
+              message: `Manager ${user.name} (${managerId}) logged in successfully on ${timeStr}.`,
+              type: 'alert',
+              priority: 'medium',
+              senderId: user._id,
+              senderName: user.name,
+              senderRole: 'manager',
+              link: '/admin-dashboard/user-management',
+            }))
+          ).catch(() => {});
+        }
+      }
     }
 
     sendTokenResponse(res, user, 200, 'Login successful. Welcome back!');
@@ -371,6 +391,10 @@ const getMe = async (req, res, next) => {
         phone: user.phone,
         role: user.role,
         classification: user.role === 'customer' ? user.classification : undefined,
+        profileCompleted: user.role === 'customer' ? !!user.profileCompleted : undefined,
+        kycStatus: user.role === 'customer' ? (user.kycStatus || 'Not Started') : undefined,
+        isKycComplete: user.role === 'customer' ? !!user.isKycComplete : undefined,
+        bankingAccess: user.role === 'customer' ? !!(user.profileCompleted && user.kycStatus === 'Approved') : undefined,
         isActive: user.isActive,
         isTempPassword: !!user.isTempPassword,
         lastLogin: user.lastLogin,

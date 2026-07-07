@@ -7,6 +7,7 @@ import {
 } from '@mui/material';
 import { Add, Delete, Person, AccountBalance, Phone, Email } from '@mui/icons-material';
 import { beneficiaryAPI } from '../../services/api';
+import { getDisplayName } from '../../utils/textFormat';
 import TablePaginationControls from '../../components/common/TablePaginationControls';
 import useTablePagination from '../../hooks/useTablePagination';
 
@@ -190,10 +191,10 @@ const BeneficiaryManagement = () => {
                       <TableCell sx={{ borderColor: 'rgba(255,255,255,0.05)' }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                           <Avatar sx={{ width: 36, height: 36, background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.3)', fontSize: '0.85rem', fontWeight: 700, color: '#818cf8' }}>
-                            {ben.beneficiaryName.charAt(0).toUpperCase()}
+                            {getDisplayName(ben.beneficiaryName, '').charAt(0)}
                           </Avatar>
                           <Box>
-                            <Typography sx={{ color: '#fff', fontSize: '0.85rem', fontWeight: 600 }}>{ben.beneficiaryName}</Typography>
+                            <Typography sx={{ color: '#fff', fontSize: '0.85rem', fontWeight: 600 }}>{getDisplayName(ben.beneficiaryName, '')}</Typography>
                             <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.72rem' }}>{ben.nickname}</Typography>
                           </Box>
                         </Box>

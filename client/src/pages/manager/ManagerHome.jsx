@@ -6,7 +6,6 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
   Grid,
   Skeleton,
   Stack,
@@ -15,14 +14,22 @@ import {
 import {
   AccountBalance,
   AccessTime,
+  Apartment,
   Business,
   CalendarMonth,
+  CheckCircle,
+  DonutLarge,
+  EventRepeat,
+  Error,
+  Groups,
+  InfoOutlined,
+  LocalAtm,
   Notifications,
-  People,
   PendingActions,
   Person,
   Refresh,
   Savings,
+  ShowChart,
   SwapHoriz,
   TrendingUp,
   Wallet,
@@ -44,6 +51,11 @@ import { useSelector } from 'react-redux';
 import { useNavigate } from 'react-router-dom';
 import { managerAPI } from '../../services/api';
 
+const navy = '#061a3a';
+const royalBlue = '#2563eb';
+const textPrimary = '#071735';
+const textMuted = '#64748b';
+
 const numberFormat = new Intl.NumberFormat('en-IN');
 const currencyFormat = new Intl.NumberFormat('en-IN', {
   style: 'currency',
@@ -51,32 +63,8 @@ const currencyFormat = new Intl.NumberFormat('en-IN', {
   maximumFractionDigits: 0,
 });
 
-const cardBaseSx = {
-  background: 'linear-gradient(145deg, rgba(17,24,61,0.88), rgba(8,13,36,0.78))',
-  border: '1px solid rgba(148,163,184,0.16)',
-  borderRadius: '14px',
-  boxShadow: '0 16px 34px rgba(0,0,0,0.22)',
-  backdropFilter: 'blur(18px)',
-  overflow: 'hidden',
-};
-
-const kpiStyles = {
-  customers: { color: '#38bdf8', glow: 'rgba(56,189,248,0.22)', icon: <People /> },
-  accounts: { color: '#2dd4bf', glow: 'rgba(45,212,191,0.2)', icon: <AccountBalance /> },
-  approvals: { color: '#f59e0b', glow: 'rgba(245,158,11,0.22)', icon: <PendingActions /> },
-  overdraft: { color: '#ec4899', glow: 'rgba(236,72,153,0.2)', icon: <Wallet /> },
-  transactions: { color: '#8b5cf6', glow: 'rgba(139,92,246,0.22)', icon: <SwapHoriz /> },
-};
-
-const classificationColors = ['#f59e0b', '#8b5cf6', '#3b82f6', '#22c55e', '#06b6d4', '#ec4899', '#a3e635', '#f97316'];
-
-const priorityMeta = {
-  high: { color: '#fb7185', bg: 'rgba(244,63,94,0.14)', label: 'High Priority' },
-  medium: { color: '#f59e0b', bg: 'rgba(245,158,11,0.14)', label: 'Medium Priority' },
-  low: { color: '#38bdf8', bg: 'rgba(56,189,248,0.12)', label: 'Low Priority' },
-};
-
 const formatNumber = (value) => numberFormat.format(Number(value || 0));
+const formatCurrency = (value) => currencyFormat.format(Number(value || 0));
 
 const formatRelativeTime = (dateValue) => {
   if (!dateValue) return 'Just now';
@@ -90,91 +78,131 @@ const formatRelativeTime = (dateValue) => {
   return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
 };
 
-const GlassPanel = ({ children, sx = {} }) => (
-  <Card sx={{ ...cardBaseSx, ...sx }}>
-    <CardContent sx={{ p: { xs: 1.5, md: 1.8 } }}>{children}</CardContent>
-  </Card>
-);
+const panelSx = {
+  bgcolor: '#fff',
+  border: '1px solid rgba(37,99,235,0.12)',
+  borderRadius: '18px',
+  boxShadow: '0 18px 45px rgba(2, 8, 23, 0.16)',
+  overflow: 'hidden',
+};
 
-const KpiCard = ({ title, value, icon, color, glow, loading, data }) => (
-  <Card
+const classificationColors = ['#2563eb', '#22c55e', '#f59e0b', '#06b6d4', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316'];
+
+const notificationMeta = {
+  approval: { icon: <CheckCircle />, color: '#16a34a', bg: '#dcfce7' },
+  rejection: { icon: <Error />, color: '#dc2626', bg: '#fee2e2' },
+  warning: { icon: <PendingActions />, color: '#d97706', bg: '#fef3c7' },
+  info: { icon: <InfoOutlined />, color: '#0891b2', bg: '#cffafe' },
+  low: { icon: <InfoOutlined />, color: '#0891b2', bg: '#cffafe' },
+};
+
+const TimeCard = ({ icon, label, value }) => (
+  <Box
     sx={{
-      ...cardBaseSx,
-      height: '100%',
-      position: 'relative',
-      transition: 'transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease',
+      bgcolor: '#fff',
+      border: '1px solid rgba(37,99,235,0.24)',
+      borderRadius: '14px',
+      px: 1.5,
+      py: 1,
+      minWidth: { xs: '100%', sm: 150 },
+      display: 'flex',
+      alignItems: 'center',
+      gap: 1,
+      boxShadow: '0 10px 24px rgba(15,23,42,0.12)',
+      transition: 'transform .2s ease, box-shadow .2s ease, border-color .2s ease',
       '&:hover': {
         transform: 'translateY(-2px)',
-        borderColor: color,
-        boxShadow: `0 18px 38px ${glow}`,
-      },
-      '&:before': {
-        content: '""',
-        position: 'absolute',
-        inset: 0,
-        background: `radial-gradient(circle at top right, ${glow}, transparent 45%)`,
-        pointerEvents: 'none',
+        borderColor: royalBlue,
+        boxShadow: '0 16px 34px rgba(37,99,235,0.18)',
       },
     }}
   >
-    <CardContent sx={{ p: 1.5, position: 'relative', zIndex: 1 }}>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.1 }}>
-        <Box>
-          <Typography sx={{ color: 'rgba(255,255,255,0.78)', fontSize: '0.78rem', fontWeight: 700, lineHeight: 1.25 }}>
-            {title}
-          </Typography>
-          {loading ? (
-            <Skeleton width={76} height={34} sx={{ bgcolor: 'rgba(255,255,255,0.1)', mt: 0.5 }} />
-          ) : (
-            <Typography sx={{ color: '#fff', fontSize: { xs: '1.45rem', lg: '1.55rem' }, fontWeight: 800, mt: 1, lineHeight: 1 }}>
-              {formatNumber(value)}
-            </Typography>
-          )}
-        </Box>
-        <Avatar
-          sx={{
-            width: 38,
-            height: 38,
-            bgcolor: glow,
-            color,
-            border: `1px solid ${color}55`,
-          }}
-        >
-          {React.cloneElement(icon, { fontSize: 'small' })}
-        </Avatar>
-      </Box>
-      <Box sx={{ height: 32, mt: 0.8 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <defs>
-              <linearGradient id={`spark-${title.replace(/\s+/g, '-')}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={color} stopOpacity={0.45} />
-                <stop offset="95%" stopColor={color} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area type="monotone" dataKey="count" stroke={color} fill={`url(#spark-${title.replace(/\s+/g, '-')})`} strokeWidth={2} dot={false} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </Box>
-    </CardContent>
-  </Card>
+    <Avatar sx={{ width: 32, height: 32, bgcolor: '#eff6ff', color: royalBlue }}>
+      {React.cloneElement(icon, { fontSize: 'small' })}
+    </Avatar>
+    <Box>
+      <Typography sx={{ color: textMuted, fontSize: '.68rem', fontWeight: 800, textTransform: 'uppercase' }}>{label}</Typography>
+      <Typography sx={{ color: textPrimary, fontSize: '.82rem', fontWeight: 900, whiteSpace: 'nowrap' }}>{value}</Typography>
+    </Box>
+  </Box>
 );
 
 const ChartTooltipBox = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   const current = payload[0]?.payload || {};
   return (
-    <Box sx={{ bgcolor: '#0f172a', color: '#fff', border: '1px solid rgba(148,163,184,0.22)', borderRadius: '10px', p: 1.4, boxShadow: '0 14px 35px rgba(0,0,0,0.32)' }}>
-      <Typography sx={{ fontSize: '0.78rem', fontWeight: 700 }}>{label}</Typography>
-      <Typography sx={{ color: '#c4b5fd', fontSize: '0.76rem', mt: 0.4 }}>
-        {formatNumber(current.count)} transactions
-      </Typography>
-      <Typography sx={{ color: 'rgba(255,255,255,0.62)', fontSize: '0.72rem' }}>
-        {currencyFormat.format(current.amount || 0)}
-      </Typography>
+    <Box sx={{ bgcolor: '#fff', color: textPrimary, border: '1px solid #dbeafe', borderRadius: '12px', p: 1.4, boxShadow: '0 14px 35px rgba(15,23,42,0.18)' }}>
+      <Typography sx={{ fontSize: '.78rem', fontWeight: 900 }}>{label}</Typography>
+      <Typography sx={{ color: royalBlue, fontSize: '.76rem', mt: .35 }}>{formatNumber(current.count)} transactions</Typography>
+      <Typography sx={{ color: textMuted, fontSize: '.72rem' }}>{formatCurrency(current.amount || 0)}</Typography>
     </Box>
   );
 };
+
+const KpiCard = ({ title, value, icon, color, accent, loading, growth }) => {
+  return (
+    <Card
+      sx={{
+        ...panelSx,
+        height: '100%',
+        position: 'relative',
+        transition: 'transform .22s ease, box-shadow .22s ease',
+        '&:hover': {
+          transform: 'translateY(-5px)',
+          boxShadow: `0 22px 52px ${accent}`,
+        },
+        '&:before': {
+          content: '""',
+          position: 'absolute',
+          inset: '0 auto 0 0',
+          width: 5,
+          background: `linear-gradient(180deg, ${color}, ${royalBlue})`,
+        },
+      }}
+    >
+      <CardContent sx={{ p: 1.65 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1.2 }}>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ color: textMuted, fontSize: '.76rem', fontWeight: 900, lineHeight: 1.2 }}>{title}</Typography>
+            {loading ? (
+              <Skeleton width={74} height={30} sx={{ mt: .35 }} />
+            ) : (
+              <Typography sx={{ color: textPrimary, fontSize: { xs: '1.42rem', lg: '1.55rem' }, fontWeight: 950, mt: .45, lineHeight: 1 }}>
+                {formatNumber(value)}
+              </Typography>
+            )}
+          </Box>
+          <Avatar sx={{ width: 40, height: 40, bgcolor: `${color}18`, color, border: `1px solid ${color}38` }}>
+            {React.cloneElement(icon, { fontSize: 'small' })}
+          </Avatar>
+        </Box>
+        {Number.isFinite(growth) && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: .55, mt: .85 }}>
+            <TrendingUp sx={{ fontSize: 14, color: growth >= 0 ? '#16a34a' : '#dc2626' }} />
+            <Typography sx={{ color: growth >= 0 ? '#16a34a' : '#dc2626', fontSize: '.68rem', fontWeight: 900 }}>
+              {`${growth >= 0 ? '+' : ''}${growth}% this month`}
+            </Typography>
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+const SectionCard = ({ title, icon, color, action, children, sx = {} }) => (
+  <Card sx={{ ...panelSx, height: '100%', ...sx }}>
+    <CardContent sx={{ p: { xs: 2, md: 2.35 } }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.2, mb: 1.8 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1 }}>
+          <Avatar sx={{ width: 38, height: 38, bgcolor: `${color}16`, color }}>{React.cloneElement(icon, { fontSize: 'small' })}</Avatar>
+          <Typography sx={{ color: textPrimary, fontWeight: 950, fontSize: '1rem' }}>{title}</Typography>
+        </Box>
+        {action}
+      </Box>
+      {children}
+    </CardContent>
+  </Card>
+);
 
 const ManagerHome = () => {
   const navigate = useNavigate();
@@ -202,7 +230,7 @@ const ManagerHome = () => {
 
   useEffect(() => {
     fetchDashboard();
-    const refreshInterval = setInterval(() => fetchDashboard({ silent: true }), 45000);
+    const refreshInterval = setInterval(() => fetchDashboard({ silent: true }), 15000);
     const handleFocus = () => fetchDashboard({ silent: true });
     window.addEventListener('focus', handleFocus);
     return () => {
@@ -217,79 +245,70 @@ const ManagerHome = () => {
   }, []);
 
   const trendData = dashboard?.monthlyTransactions || [];
-  const sparkData = trendData.length ? trendData : Array.from({ length: 12 }, (_, index) => ({ label: index + 1, count: 0, amount: 0 }));
-  const kpis = dashboard?.kpis || {};
-  const quickStats = dashboard?.quickStatistics || {};
+  const sparkData = trendData.length ? trendData : Array.from({ length: 12 }, (_, index) => ({ label: String(index + 1), count: 0, amount: 0 }));
   const classifications = dashboard?.classificationDistribution || [];
   const notifications = (dashboard?.notifications || []).slice(0, 5);
-  const hasMoreNotifications = Boolean(dashboard?.hasMoreNotifications);
+  const kpis = dashboard?.kpis || {};
+
+  const transactionGrowth = useMemo(() => {
+    if (trendData.length < 2) return null;
+    const current = Number(trendData[trendData.length - 1]?.count || 0);
+    const previous = Number(trendData[trendData.length - 2]?.count || 0);
+    if (!previous) return current ? 100 : 0;
+    return Number((((current - previous) / previous) * 100).toFixed(1));
+  }, [trendData]);
 
   const totalClassifiedCustomers = useMemo(
-    () => classifications.reduce((sum, item) => sum + (item.count || 0), 0),
+    () => classifications.reduce((sum, item) => sum + Number(item.count || 0), 0),
     [classifications]
   );
 
   const kpiCards = [
-    { key: 'customers', title: 'Total Customers', value: kpis.totalCustomers, ...kpiStyles.customers },
-    { key: 'accounts', title: 'Total Active Accounts', value: kpis.totalActiveAccounts, ...kpiStyles.accounts },
-    { key: 'approvals', title: 'Pending Approvals', value: kpis.pendingApprovals, ...kpiStyles.approvals },
-    { key: 'overdraft', title: 'Active Overdraft Accounts', value: kpis.activeOverdraftAccounts, ...kpiStyles.overdraft },
-    { key: 'transactions', title: 'Total Transactions', value: kpis.totalTransactions, ...kpiStyles.transactions },
-  ];
-
-  const quickStatCards = [
-    { label: 'Total Savings Accounts', value: quickStats.totalSavingsAccounts, color: '#f472b6', icon: <Savings /> },
-    { label: 'Total Current Accounts', value: quickStats.totalCurrentAccounts, color: '#22d3ee', icon: <Business /> },
-    { label: 'Total Salary Accounts', value: quickStats.totalSalaryAccounts, color: '#d8b4fe', icon: <Person /> },
+    { title: 'Total Customers', value: kpis.totalCustomers, icon: <Groups />, color: '#2563eb', accent: 'rgba(37,99,235,.22)' },
+    { title: 'Total Active Accounts', value: kpis.totalActiveAccounts, icon: <AccountBalance />, color: '#06b6d4', accent: 'rgba(6,182,212,.22)' },
+    { title: 'Pending Approvals', value: kpis.pendingApprovals, icon: <PendingActions />, color: '#f59e0b', accent: 'rgba(245,158,11,.24)' },
+    { title: 'Active Overdraft Accounts', value: kpis.activeOverdraftAccounts, icon: <Wallet />, color: '#ef4444', accent: 'rgba(239,68,68,.18)' },
+    { title: 'Total Active Loan Accounts', value: kpis.totalActiveLoanAccounts, icon: <LocalAtm />, color: '#22c55e', accent: 'rgba(34,197,94,.2)' },
+    { title: 'Total Active RD Accounts', value: kpis.totalActiveRDAccounts, icon: <EventRepeat />, color: '#8b5cf6', accent: 'rgba(139,92,246,.2)' },
+    { title: 'Total Active FD Accounts', value: kpis.totalActiveFDAccounts, icon: <Savings />, color: '#14b8a6', accent: 'rgba(20,184,166,.2)' },
+    { title: 'Total Transactions', value: kpis.totalTransactions, icon: <SwapHoriz />, color: '#0ea5e9', accent: 'rgba(14,165,233,.2)', growth: transactionGrowth },
+    { title: 'Total Savings Accounts', value: kpis.totalSavingsAccounts, icon: <Savings />, color: '#16a34a', accent: 'rgba(22,163,74,.2)' },
+    { title: 'Total Current Accounts', value: kpis.totalCurrentAccounts, icon: <Business />, color: '#f97316', accent: 'rgba(249,115,22,.2)' },
+    { title: 'Total Salary Accounts', value: kpis.totalSalaryAccounts, icon: <Person />, color: '#ec4899', accent: 'rgba(236,72,153,.18)' },
+    { title: 'Total Managers', value: kpis.totalManagers, icon: <Apartment />, color: '#7c3aed', accent: 'rgba(124,58,237,.2)' },
   ];
 
   const timeText = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  const dateText = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'long' });
+  const dateText = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', weekday: 'short' });
 
   return (
-    <Box>
-      <Box
-        sx={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: { xs: 'flex-start', md: 'center' },
-          flexDirection: { xs: 'column', md: 'row' },
-          gap: 1.4,
-          mb: 1.8,
-        }}
-      >
+    <Box sx={{ bgcolor: navy, minHeight: '100%', color: '#fff' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: { xs: 'flex-start', lg: 'center' }, flexDirection: { xs: 'column', lg: 'row' }, gap: 2.2, mb: 2.4 }}>
         <Box>
-          <Typography sx={{ color: '#fff', fontSize: { xs: '1.35rem', md: '1.55rem' }, fontWeight: 800, lineHeight: 1.15 }}>
-            Welcome back, {user?.name || 'Manager'}
+          <Typography sx={{ color: '#fff', fontSize: { xs: '1.55rem', md: '2rem' }, fontWeight: 950, lineHeight: 1.12 }}>
+            Welcome back, {user?.name || 'Manager'} 👋
           </Typography>
-          <Typography sx={{ color: 'rgba(226,232,240,0.68)', fontSize: '0.84rem', mt: 0.35 }}>
-            Live banking operations overview from Adnate PayNest.
+          <Typography sx={{ color: 'rgba(226,232,240,.72)', fontSize: { xs: '.9rem', md: '1rem' }, mt: .55 }}>
+            Here's today's banking operations overview.
           </Typography>
         </Box>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { xs: 'stretch', sm: 'center' } }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.9, color: 'rgba(255,255,255,0.74)', px: 1.2, py: 0.7, border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', bgcolor: 'rgba(255,255,255,0.04)' }}>
-            <AccessTime sx={{ color: '#93c5fd', fontSize: '1rem' }} />
-            <Typography sx={{ fontWeight: 700, fontSize: '0.78rem' }}>{timeText}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.9, color: 'rgba(255,255,255,0.74)', px: 1.2, py: 0.7, border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', bgcolor: 'rgba(255,255,255,0.04)' }}>
-            <CalendarMonth sx={{ color: '#c4b5fd', fontSize: '1rem' }} />
-            <Typography sx={{ fontWeight: 700, fontSize: '0.78rem' }}>{dateText}</Typography>
-          </Box>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.1} sx={{ width: { xs: '100%', lg: 'auto' } }}>
+          <TimeCard icon={<AccessTime />} label="Live Time" value={timeText} />
+          <TimeCard icon={<CalendarMonth />} label="Current Date" value={dateText} />
           <Button
             onClick={() => fetchDashboard({ silent: true })}
             disabled={refreshing}
             startIcon={<Refresh />}
             sx={{
-              color: '#fff',
+              bgcolor: '#fff',
+              color: royalBlue,
+              border: '1px solid rgba(37,99,235,0.24)',
+              borderRadius: '14px',
+              px: 2,
+              fontWeight: 950,
               textTransform: 'none',
-              fontWeight: 800,
-              fontSize: '0.78rem',
-              borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              bgcolor: 'rgba(255,255,255,0.05)',
-              px: 1.2,
-              py: 0.65,
-              '&:hover': { bgcolor: 'rgba(255,255,255,0.1)' },
+              boxShadow: '0 10px 24px rgba(15,23,42,0.12)',
+              '&:hover': { bgcolor: '#eff6ff', transform: 'translateY(-2px)', boxShadow: '0 16px 34px rgba(37,99,235,0.18)' },
             }}
           >
             Refresh
@@ -297,202 +316,117 @@ const ManagerHome = () => {
         </Stack>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 1.4, bgcolor: 'rgba(127,29,29,0.82)', color: '#fecaca', border: '1px solid rgba(248,113,113,0.22)' }}>
-          {error}
-        </Alert>
-      )}
+      {error && <Alert severity="error" sx={{ mb: 2, borderRadius: '14px' }}>{error}</Alert>}
 
-      <Grid container spacing={1.35} sx={{ mb: 1.5 }}>
+      <Grid container spacing={1.6} sx={{ mb: 2 }}>
         {kpiCards.map((item) => (
-          <Grid item xs={12} sm={6} lg={2.4} key={item.key}>
-            <KpiCard {...item} loading={loading} data={sparkData} />
+          <Grid item xs={12} sm={6} lg={3} key={item.title}>
+            <KpiCard {...item} loading={loading} growth={item.growth} />
           </Grid>
         ))}
       </Grid>
 
-      <Grid container spacing={1.35} sx={{ mb: 1.5 }}>
-        {quickStatCards.map((item) => (
-          <Grid item xs={12} md={4} key={item.label}>
-            <Box
-              sx={{
-                p: 1.5,
-                borderRadius: '14px',
-                minHeight: 94,
-                background: `linear-gradient(135deg, ${item.color}24, rgba(15,23,42,0.52))`,
-                border: `1px solid ${item.color}33`,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: 1.5,
-                boxShadow: '0 14px 28px rgba(0,0,0,0.18)',
-              }}
-            >
-              <Box>
-                <Typography sx={{ color: 'rgba(255,255,255,0.74)', fontSize: '0.82rem', fontWeight: 700 }}>{item.label}</Typography>
-                {loading ? (
-                  <Skeleton width={70} height={30} sx={{ bgcolor: 'rgba(255,255,255,0.1)' }} />
-                ) : (
-                  <Typography sx={{ color: '#fff', fontSize: '1.45rem', fontWeight: 900, mt: 0.35 }}>{formatNumber(item.value)}</Typography>
-                )}
-              </Box>
-              <Box sx={{ color: item.color, display: 'flex', flexShrink: 0 }}>{React.cloneElement(item.icon, { sx: { fontSize: 32 } })}</Box>
-            </Box>
-          </Grid>
-        ))}
-      </Grid>
-
-      <Grid container spacing={1.35} sx={{ mb: 1.5 }}>
-        <Grid item xs={12} lg={7}>
-          <GlassPanel sx={{ height: '100%' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.2, mb: 1.2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Avatar sx={{ bgcolor: 'rgba(139,92,246,0.18)', color: '#a78bfa', width: 30, height: 30 }}>
-                  <TrendingUp fontSize="small" />
-                </Avatar>
-                <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: '0.94rem' }}>Monthly Transactions Trend</Typography>
-              </Box>
-              <Chip label="Last 12 Months" size="small" sx={{ bgcolor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.74)', fontWeight: 700, height: 24, fontSize: '0.68rem' }} />
-            </Box>
-            <Box sx={{ height: { xs: 230, md: 255 } }}>
+      <Grid container spacing={1.6}>
+        <Grid item xs={12} lg={5}>
+          <SectionCard title="Monthly Transactions Trend" icon={<ShowChart />} color={royalBlue}>
+            <Box sx={{ height: 240 }}>
               {loading ? (
-                <Skeleton variant="rounded" height="100%" sx={{ bgcolor: 'rgba(255,255,255,0.07)', borderRadius: '14px' }} />
+                <Skeleton variant="rounded" height="100%" sx={{ borderRadius: '16px' }} />
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={trendData} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+                  <AreaChart data={trendData} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="managerTrend" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.55} />
-                        <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.02} />
+                      <linearGradient id="monthlyTransactions" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={royalBlue} stopOpacity={0.35} />
+                        <stop offset="95%" stopColor={royalBlue} stopOpacity={0.02} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.12)" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fill: 'rgba(226,232,240,0.7)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'rgba(226,232,240,0.7)', fontSize: 10 }} axisLine={false} tickLine={false} width={36} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: textMuted, fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: textMuted, fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={36} />
                     <ChartTooltip content={<ChartTooltipBox />} />
-                    <Area type="monotone" dataKey="count" fill="url(#managerTrend)" stroke="#a78bfa" strokeWidth={3} />
-                    <Line type="monotone" dataKey="count" stroke="#f8fafc" strokeWidth={1.5} dot={{ r: 3, fill: '#fff' }} activeDot={{ r: 6, fill: '#a78bfa' }} />
+                    <Area type="monotone" dataKey="count" fill="url(#monthlyTransactions)" stroke={royalBlue} strokeWidth={3} />
+                    <Line type="monotone" dataKey="count" stroke="#06b6d4" strokeWidth={2} dot={{ r: 3, fill: '#fff', stroke: royalBlue }} activeDot={{ r: 6, fill: royalBlue }} />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
             </Box>
-          </GlassPanel>
+          </SectionCard>
         </Grid>
 
-        <Grid item xs={12} lg={5}>
-              <GlassPanel sx={{ height: '100%' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.2 }}>
-                  <Avatar sx={{ bgcolor: 'rgba(56,189,248,0.16)', color: '#38bdf8', width: 30, height: 30 }}>
-                    <People fontSize="small" />
-                  </Avatar>
-                  <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: '0.94rem' }}>Customer Classification Distribution</Typography>
-                </Box>
-                {loading ? (
-                  <Skeleton variant="rounded" height={220} sx={{ bgcolor: 'rgba(255,255,255,0.07)', borderRadius: '14px' }} />
-                ) : classifications.length === 0 ? (
-                  <Typography sx={{ color: 'rgba(255,255,255,0.52)', py: 4, textAlign: 'center' }}>No classification data found.</Typography>
-                ) : (
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '145px 1fr' }, alignItems: 'center', gap: 1.6 }}>
-                    <Box sx={{ width: 132, height: 132, mx: 'auto', position: 'relative', overflow: 'visible' }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                          <Pie data={classifications} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={26} outerRadius={42} paddingAngle={3}>
-                            {classifications.map((entry, index) => (
-                              <Cell key={entry.name} fill={classificationColors[index % classificationColors.length]} />
-                            ))}
-                          </Pie>
-                          <ChartTooltip formatter={(value, name, item) => [`${formatNumber(value)} (${item.payload.percentage}%)`, name]} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-                        <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: '0.9rem' }}>{formatNumber(totalClassifiedCustomers)}</Typography>
-                        <Typography sx={{ color: 'rgba(255,255,255,0.54)', fontSize: '0.6rem' }}>Customers</Typography>
-                      </Box>
+        <Grid item xs={12} lg={3}>
+          <SectionCard title="Customer Classification Distribution" icon={<DonutLarge />} color="#06b6d4">
+            {loading ? (
+              <Skeleton variant="rounded" height={240} sx={{ borderRadius: '16px' }} />
+            ) : classifications.length === 0 ? (
+              <Typography sx={{ color: textMuted, py: 7, textAlign: 'center' }}>No classification data found.</Typography>
+            ) : (
+              <Box>
+                <Box sx={{ height: 142, position: 'relative' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={classifications} dataKey="count" nameKey="name" cx="50%" cy="50%" innerRadius={34} outerRadius={56} paddingAngle={3}>
+                        {classifications.map((entry, index) => (
+                          <Cell key={entry.name} fill={classificationColors[index % classificationColors.length]} />
+                        ))}
+                      </Pie>
+                      <ChartTooltip formatter={(value, name, item) => [`${formatNumber(value)} (${item.payload.percentage}%)`, name]} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <Box sx={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', pointerEvents: 'none' }}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography sx={{ color: textPrimary, fontWeight: 950, fontSize: '1.15rem' }}>{formatNumber(totalClassifiedCustomers)}</Typography>
+                      <Typography sx={{ color: textMuted, fontWeight: 800, fontSize: '.68rem' }}>Customers</Typography>
                     </Box>
-                    <Stack spacing={0.65}>
-                      {classifications.map((item, index) => (
-                        <Box key={item.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: classificationColors[index % classificationColors.length] }} />
-                            <Typography sx={{ color: '#e5e7eb', fontSize: '0.76rem', fontWeight: 700 }}>{item.name}</Typography>
-                          </Box>
-                          <Typography sx={{ color: 'rgba(255,255,255,0.62)', fontSize: '0.72rem' }}>
-                            {formatNumber(item.count)} ({item.percentage}%)
-                          </Typography>
-                        </Box>
-                      ))}
-                    </Stack>
                   </Box>
-                )}
-              </GlassPanel>
-        </Grid>
-      </Grid>
-
-      <Grid container spacing={1.35}>
-        <Grid item xs={12}>
-          <GlassPanel sx={{ height: '100%' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.2, mb: 1.2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Avatar sx={{ bgcolor: 'rgba(96,165,250,0.16)', color: '#93c5fd', width: 30, height: 30 }}>
-                  <Notifications fontSize="small" />
-                </Avatar>
-                <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: '0.94rem' }}>Notifications</Typography>
-              </Box>
-              {hasMoreNotifications && (
-                <Button onClick={() => navigate('/manager-dashboard/notifications')} sx={{ color: '#a78bfa', textTransform: 'none', fontWeight: 800, fontSize: '0.78rem', py: 0.3 }}>
-                  View All
-                </Button>
-              )}
-            </Box>
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' },
-                gap: 1,
-              }}
-            >
-              {loading ? (
-                Array.from({ length: 5 }, (_, index) => (
-                  <Skeleton key={index} variant="rounded" height={92} sx={{ bgcolor: 'rgba(255,255,255,0.07)', borderRadius: '12px' }} />
-                ))
-              ) : notifications.length === 0 ? (
-                <Box sx={{ py: 2.5, textAlign: 'center', color: 'rgba(255,255,255,0.52)', gridColumn: '1 / -1' }}>
-                  <Notifications sx={{ fontSize: 30, mb: 0.6, color: 'rgba(255,255,255,0.28)' }} />
-                  <Typography sx={{ fontSize: '0.85rem' }}>No notifications found.</Typography>
                 </Box>
+                <Stack spacing={.5} sx={{ mt: .7 }}>
+                  {classifications.map((item, index) => (
+                    <Box key={item.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: .8 }}>
+                        <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: classificationColors[index % classificationColors.length] }} />
+                        <Typography sx={{ color: textPrimary, fontSize: '.75rem', fontWeight: 900 }}>{item.name}</Typography>
+                      </Box>
+                      <Typography sx={{ color: textMuted, fontSize: '.72rem', fontWeight: 800 }}>{formatNumber(item.count)} ({item.percentage}%)</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </SectionCard>
+        </Grid>
+
+        <Grid item xs={12} lg={4}>
+          <SectionCard
+            title="Recent Notifications"
+            icon={<Notifications />}
+            color="#f59e0b"
+            action={<Button onClick={() => navigate('/manager-dashboard/notifications')} sx={{ color: royalBlue, fontWeight: 950, textTransform: 'none' }}>View All</Button>}
+          >
+            <Stack spacing={1.05}>
+              {loading ? (
+                Array.from({ length: 5 }, (_, index) => <Skeleton key={index} variant="rounded" height={46} sx={{ borderRadius: '14px' }} />)
+              ) : notifications.length === 0 ? (
+                <Typography sx={{ color: textMuted, textAlign: 'center', py: 5 }}>No notifications found.</Typography>
               ) : (
                 notifications.map((item) => {
-                  const meta = priorityMeta[item.priority] || priorityMeta.low;
+                  const meta = notificationMeta[item.type] || notificationMeta[item.priority] || notificationMeta.info;
                   return (
-                    <Box
-                      key={item._id}
-                      sx={{
-                        p: 1.1,
-                        borderRadius: '12px',
-                        bgcolor: item.isRead ? 'rgba(255,255,255,0.045)' : meta.bg,
-                        border: `1px solid ${item.isRead ? 'rgba(255,255,255,0.08)' : `${meta.color}33`}`,
-                        minHeight: 92,
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography sx={{ color: meta.color, fontWeight: 800, fontSize: '0.68rem' }}>{meta.label}</Typography>
-                          <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: '0.78rem', mt: 0.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Typography>
-                          <Typography sx={{ color: 'rgba(226,232,240,0.68)', fontSize: '0.7rem', mt: 0.3, lineHeight: 1.35, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                            {item.message}
-                          </Typography>
+                    <Box key={item._id} sx={{ display: 'flex', gap: 1.05, p: .9, borderRadius: '14px', bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <Avatar sx={{ width: 30, height: 30, bgcolor: meta.bg, color: meta.color }}>{React.cloneElement(meta.icon, { fontSize: 'small' })}</Avatar>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1 }}>
+                          <Typography sx={{ color: textPrimary, fontWeight: 950, fontSize: '.78rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</Typography>
+                          <Typography sx={{ color: textMuted, fontWeight: 800, fontSize: '.65rem', whiteSpace: 'nowrap' }}>{formatRelativeTime(item.createdAt)}</Typography>
                         </Box>
-                        <Stack alignItems="flex-end" spacing={0.55} sx={{ flexShrink: 0 }}>
-                          <Typography sx={{ color: 'rgba(255,255,255,0.48)', fontSize: '0.62rem', whiteSpace: 'nowrap' }}>{formatRelativeTime(item.createdAt)}</Typography>
-                          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: item.isRead ? 'rgba(148,163,184,0.45)' : meta.color }} />
-                        </Stack>
+                        <Typography sx={{ color: textMuted, fontSize: '.71rem', lineHeight: 1.35, mt: .25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{item.message}</Typography>
                       </Box>
                     </Box>
                   );
                 })
               )}
-            </Box>
-          </GlassPanel>
+            </Stack>
+          </SectionCard>
         </Grid>
       </Grid>
     </Box>

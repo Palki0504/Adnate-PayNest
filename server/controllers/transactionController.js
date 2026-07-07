@@ -13,6 +13,8 @@ const {
   validateBeneficiary,
 } = require('../utils/transferHelper');
 const { sendTransferSuccessEmail, sendTransferFailureEmail, sendTransferNotificationEmail } = require('../utils/emailService');
+const { notifySuccessfulOverdraftUsage } = require('../utils/overdraftEmailNotifier');
+const { getDisplayName } = require('../utils/nameFormat');
 const { body, validationResult } = require('express-validator');
 
 const consolidatedTransactionQuery = {
@@ -149,7 +151,7 @@ const exportMyTransactions = async (req, res, next) => {
       'Status': tx.status || '',
       'Amount': tx.amount || 0,
       'Reference': tx.reference || '',
-      'Receiver Name': tx.metadata?.receiverName || tx.metadata?.beneficiaryName || '',
+      'Receiver Name': getDisplayName(tx.metadata?.receiverName || tx.metadata?.beneficiaryName, ''),
       'Receiver Customer ID': tx.metadata?.receiverCustomerId || '',
     }));
 
@@ -692,6 +694,19 @@ const transferToBeneficiary = async (req, res, next) => {
       emailResults.forEach((result) => {
         if (result.status === 'rejected') console.error('Transfer success email failed:', result.reason?.message || result.reason);
       });
+      if (usesOverdraft) {
+        try {
+          const updatedAccount = await Account.findById(fromAccountId);
+          await notifySuccessfulOverdraftUsage({
+            user: senderUser,
+            account: updatedAccount,
+            amountUsed: overdraftAmountUsed,
+            transactionId,
+          });
+        } catch (error) {
+          console.error('Overdraft email failed:', error.message);
+        }
+      }
     });
 
     res.status(200).json({
@@ -892,6 +907,21 @@ const transferMoney = async (req, res, next) => {
     // Save both accounts
     await Promise.all([fromAccount.save(), toAccount.save()]);
     await updateAccountAfterTransfer(fromAccountId, amount, usesOverdraft);
+    if (usesOverdraft) {
+      setImmediate(async () => {
+        try {
+          const updatedAccount = await Account.findById(fromAccountId);
+          await notifySuccessfulOverdraftUsage({
+            user: req.user,
+            account: updatedAccount,
+            amountUsed: overdraftAmountUsed,
+            transactionId,
+          });
+        } catch (error) {
+          console.error('Overdraft email failed:', error.message);
+        }
+      });
+    }
 
     res.status(200).json({
       success: true,
@@ -1080,6 +1110,19 @@ const transferByCustomerId = async (req, res, next) => {
       emailResults.forEach((result) => {
         if (result.status === 'rejected') console.error('Transfer success email failed:', result.reason?.message || result.reason);
       });
+      if (usesOverdraft) {
+        try {
+          const updatedAccount = await Account.findById(fromAccountId);
+          await notifySuccessfulOverdraftUsage({
+            user: req.user,
+            account: updatedAccount,
+            amountUsed: overdraftAmountUsed,
+            transactionId,
+          });
+        } catch (error) {
+          console.error('Overdraft email failed:', error.message);
+        }
+      }
     });
 
     res.status(200).json({

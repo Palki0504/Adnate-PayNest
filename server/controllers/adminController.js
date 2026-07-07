@@ -7,12 +7,43 @@ const Notification = require('../models/Notification');
 const AuditLog = require('../models/AuditLog');
 const bcrypt = require('bcryptjs');
 const { body } = require('express-validator');
+const XLSX = require('xlsx');
 const { createUniqueUserId } = require('../utils/idGenerator');
 const { normalizeGuardianDetails, validateGuardianForCustomer } = require('../utils/guardianValidation');
 const { normalizeEmail } = require('../utils/emailValidation');
 
 const consolidatedTransactionQuery = {
   reference: { $not: /-CR$/ },
+};
+
+const monthNames = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const escapeRegex = (value = '') => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const formatReportDate = (date) => {
+  if (!date) return 'Not provided';
+  const value = new Date(date);
+  if (Number.isNaN(value.getTime())) return 'Not provided';
+  return `${String(value.getDate()).padStart(2, '0')}-${shortMonthNames[value.getMonth()]}-${value.getFullYear()}`;
+};
+
+const getMonthlyRange = (year, month) => {
+  const numericYear = Number.parseInt(year, 10);
+  const numericMonth = Number.parseInt(month, 10);
+  if (!numericYear || numericMonth < 1 || numericMonth > 12) return null;
+
+  return {
+    start: new Date(numericYear, numericMonth - 1, 1),
+    end: new Date(numericYear, numericMonth, 1),
+    year: numericYear,
+    month: numericMonth,
+    label: `${monthNames[numericMonth - 1]} ${numericYear}`,
+  };
 };
 
 // ─── Validation ───────────────────────────────────────────────────────────────
@@ -499,34 +530,192 @@ const getAllAccounts = async (req, res, next) => {
   }
 };
 
+const buildCustomerMonitoringQuery = async ({ year, month, search = '', status = 'all' }) => {
+  const range = getMonthlyRange(year, month);
+  const query = {
+    role: 'customer',
+    approvalStatus: 'approved',
+  };
+
+  if (range) query.createdAt = { $gte: range.start, $lt: range.end };
+  if (status === 'active') query.isActive = true;
+  if (status === 'inactive') query.isActive = false;
+
+  const trimmedSearch = String(search || '').trim();
+  if (trimmedSearch) {
+    const regex = new RegExp(escapeRegex(trimmedSearch), 'i');
+    const matchingAccountUserIds = await Account.find({ accountNumber: regex }).distinct('userId');
+    query.$or = [
+      { name: regex },
+      { customerId: regex },
+      { email: regex },
+      { _id: { $in: matchingAccountUserIds } },
+    ];
+  }
+
+  return { query, range };
+};
+
+const buildCustomersWithStats = async (customers) => {
+  const customerIds = customers.map((c) => c._id);
+  const accounts = await Account.find({ userId: { $in: customerIds } }).lean();
+  const accountsByCustomerId = accounts.reduce((acc, account) => {
+    const key = account.userId.toString();
+    if (!acc[key]) acc[key] = [];
+    acc[key].push(account);
+    return acc;
+  }, {});
+
+  const maskAadhaar = (value) => (value ? `XXXX XXXX ${String(value).slice(-4)}` : '');
+  const maskPan = (value) => (value ? `XXXXXX${String(value).slice(-4)}` : '');
+
+  return customers.map((c) => {
+    const customer = c.toObject ? c.toObject() : c;
+    const userAccounts = accountsByCustomerId[customer._id.toString()] || [];
+    const totalBalance = userAccounts.reduce((s, a) => s + (a.balance || 0), 0);
+    const totalODUsed = userAccounts.reduce((s, a) => s + (a.overdraftUsed || 0), 0);
+    const hasAadhaar = !!customer.aadhaarNumber;
+    const hasPan = !!customer.panNumber;
+    const hasDateOfBirth = !!customer.dateOfBirth;
+    const isKycComplete = hasAadhaar && hasPan && hasDateOfBirth;
+
+    return {
+      ...customer,
+      aadhaarNumber: undefined,
+      panNumber: undefined,
+      maskedAadhaarNumber: maskAadhaar(customer.aadhaarNumber),
+      maskedPanNumber: maskPan(customer.panNumber),
+      hasAadhaar,
+      hasPan,
+      hasDateOfBirth,
+      isKycComplete,
+      accounts: userAccounts,
+      totalBalance,
+      totalODUsed,
+    };
+  });
+};
+
 // ─── @desc    Get all customers (for manager customer monitoring)
 // ─── @route   GET /api/admin/customers
 // ─── @access  Protected (admin, manager)
 const getAllCustomers = async (req, res, next) => {
   try {
-    const { search = '' } = req.query;
-    const query = { role: 'customer', isActive: true, approvalStatus: 'approved' };
-    if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-      ];
+    const { query, range } = await buildCustomerMonitoringQuery(req.query);
+    const customers = await User.find(query)
+      .select('-password +aadhaarNumber +panNumber')
+      .sort({ createdAt: -1 });
+    const customersWithStats = await buildCustomersWithStats(customers);
+
+    res.status(200).json({
+      success: true,
+      customers: customersWithStats,
+      filters: range ? { year: range.year, month: range.month, label: range.label } : null,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getCustomerRegistrationYears = async (req, res, next) => {
+  try {
+    const years = await User.aggregate([
+      { $match: { role: 'customer', approvalStatus: 'approved', createdAt: { $exists: true } } },
+      { $group: { _id: { $year: '$createdAt' } } },
+      { $sort: { _id: -1 } },
+    ]);
+
+    const currentYear = new Date().getFullYear();
+    const result = years.map((item) => item._id).filter(Boolean);
+    if (!result.includes(currentYear)) result.unshift(currentYear);
+
+    res.status(200).json({ success: true, years: result });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const downloadCustomerMonthlyReport = async (req, res, next) => {
+  try {
+    const { query, range } = await buildCustomerMonitoringQuery(req.query);
+    if (!range) {
+      return res.status(400).json({ success: false, message: 'Valid year and month are required.' });
     }
 
-    const customers = await User.find(query).select('-password').sort({ createdAt: -1 });
+    const customers = await User.find(query)
+      .select('-password +aadhaarNumber +panNumber')
+      .sort({ createdAt: -1 });
+    const customersWithStats = await buildCustomersWithStats(customers);
 
-    // Get account summaries
-    const customerIds = customers.map((c) => c._id);
-    const accounts = await Account.find({ userId: { $in: customerIds } });
+    const columns = [
+      'S.No.',
+      'Customer ID',
+      'Customer Name',
+      'Email',
+      'Phone',
+      'Status',
+      'KYC Status',
+      'Registration Date',
+      'Primary Account',
+      'Account Numbers',
+      'Total Balance',
+      'OD Used',
+      'Classification',
+    ];
 
-    const customersWithStats = customers.map((c) => {
-      const userAccounts = accounts.filter((a) => a.userId.toString() === c._id.toString());
-      const totalBalance = userAccounts.reduce((s, a) => s + a.balance, 0);
-      const totalODUsed = userAccounts.reduce((s, a) => s + a.overdraftUsed, 0);
-      return { ...c.toObject(), accounts: userAccounts, totalBalance, totalODUsed };
-    });
+    const rows = customersWithStats.map((customer, index) => ({
+      'S.No.': index + 1,
+      'Customer ID': customer.customerId || '',
+      'Customer Name': customer.name || '',
+      'Email': customer.email || '',
+      'Phone': customer.phone || '',
+      'Status': customer.isActive ? 'Active' : 'Inactive',
+      'KYC Status': customer.isKycComplete ? 'Complete' : 'Incomplete',
+      'Registration Date': formatReportDate(customer.createdAt),
+      'Primary Account': customer.primaryAccountType || '',
+      'Account Numbers': (customer.accounts || []).map((account) => account.accountNumber).filter(Boolean).join(', '),
+      'Total Balance': customer.totalBalance || 0,
+      'OD Used': customer.totalODUsed || 0,
+      'Classification': customer.classification || 'PENDING',
+    }));
 
-    res.status(200).json({ success: true, customers: customersWithStats });
+    const sheetRows = [
+      ['Adnate PayNest'],
+      ['Adnate PayNest – Monthly Customer Registration Report'],
+      [`Report Month: ${range.label}`],
+      [`Generated: ${new Date().toLocaleString('en-IN')}`],
+      [],
+      ['Summary'],
+      ['Total Registered Customers', customersWithStats.length],
+      ['Active Customers', customersWithStats.filter((customer) => customer.isActive).length],
+      ['Inactive Customers', customersWithStats.filter((customer) => !customer.isActive).length],
+      ['KYC Complete', customersWithStats.filter((customer) => customer.isKycComplete).length],
+      [],
+      columns,
+      ...(rows.length
+        ? rows.map((row) => columns.map((column) => row[column] ?? ''))
+        : [['No customer registrations found for this filter.']]),
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+    worksheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 8 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 5 } },
+      { s: { r: 3, c: 0 }, e: { r: 3, c: 5 } },
+    ];
+    worksheet['!cols'] = columns.map((column) => ({ wch: Math.max(14, String(column).length + 4) }));
+    worksheet['!autofilter'] = { ref: `A12:M${Math.max(12, sheetRows.length)}` };
+    worksheet['!freeze'] = { xSplit: 0, ySplit: 12 };
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Monthly Customers');
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const filename = `Adnate_PayNest_Monthly_Customer_Registration_Report_${range.year}-${String(range.month).padStart(2, '0')}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   } catch (error) {
     next(error);
   }
@@ -543,6 +732,8 @@ module.exports = {
   getSystemAnalytics,
   getAllAccounts,
   getAllCustomers,
+  getCustomerRegistrationYears,
+  downloadCustomerMonthlyReport,
   createUserValidation,
 };
 

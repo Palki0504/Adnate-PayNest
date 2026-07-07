@@ -30,15 +30,43 @@ const getNextCustomerSequence = async () => {
       .lean(),
   ]);
 
-  const allCustomers = [...users, ...pendingUsers];
-
-  const highestSequence = allCustomers.reduce((max, customer) => {
+  const usedSequences = new Set([...users, ...pendingUsers].map((customer) => {
     const match = customer.customerId?.match(/^CUSTID(\d+)$/);
+    const sequence = match ? parseInt(match[1], 10) : 0;
+    return Number.isFinite(sequence) && sequence > 0 ? sequence : null;
+  }).filter(Boolean));
+
+  let nextSequence = 1;
+  while (usedSequences.has(nextSequence)) {
+    nextSequence += 1;
+  }
+
+  return nextSequence;
+};
+
+const getNextManagerSequence = async () => {
+  const User = require('../models/User');
+
+  const managers = await User.find({
+    role: 'manager',
+    adminId: /^MANAGER\d+$/,
+  })
+    .select('adminId')
+    .lean();
+
+  const highestSequence = managers.reduce((max, manager) => {
+    const match = manager.adminId?.match(/^MANAGER(\d+)$/);
     const sequence = match ? parseInt(match[1], 10) : 0;
     return Number.isFinite(sequence) && sequence > max ? sequence : max;
   }, 0);
 
-  return highestSequence + 1;
+  await Counter.findOneAndUpdate(
+    { name: 'manager' },
+    { $max: { seq: highestSequence } },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
+
+  return getNextSequence('manager');
 };
 
 const createUniqueUserId = async (role) => {
@@ -47,7 +75,7 @@ const createUniqueUserId = async (role) => {
     return formatId('CUSTID', seq, 2);
   }
   if (role === 'manager') {
-    const seq = await getNextSequence('manager');
+    const seq = await getNextManagerSequence();
     return formatId('MANAGER', seq);
   }
   if (role === 'admin') {

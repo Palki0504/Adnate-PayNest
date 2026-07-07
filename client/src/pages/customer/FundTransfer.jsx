@@ -10,6 +10,7 @@ import {
   ArrowForward, CurrencyRupee,
 } from '@mui/icons-material';
 import { accountAPI, beneficiaryAPI, transferAPI } from '../../services/api';
+import { getDisplayName } from '../../utils/textFormat';
 
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(amount);
@@ -421,7 +422,7 @@ const FundTransfer = () => {
                                   <Box>
                                     <Typography sx={{ fontSize: '0.85rem', fontWeight: 600 }}>{ben.nickname}</Typography>
                                     <Typography sx={{ fontSize: '0.72rem', color: 'rgba(255,255,255,0.5)' }}>
-                                      {ben.beneficiaryName} • {ben.accountNumber}
+                                      {getDisplayName(ben.beneficiaryName, '')} • {ben.accountNumber}
                                     </Typography>
                                   </Box>
                                 </MenuItem>

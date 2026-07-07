@@ -174,7 +174,7 @@ const createUser = async (req, res, next) => {
     }
 
     // Auto-generate temporary password from email prefix (e.g. palki@example.com → Palki@123)
-    const tempPassword = generateTempPassword(normalizedEmail);
+    const tempPassword = role === 'manager' ? 'Admin@123' : generateTempPassword(normalizedEmail);
 
     let user;
     let userId;
@@ -210,16 +210,16 @@ const createUser = async (req, res, next) => {
       });
     } else {
       const previousManagerIds = activeManagers.map((manager) => manager._id);
-      if (previousManagerIds.length > 0) {
-        await User.updateMany({ _id: { $in: previousManagerIds } }, { $set: { isActive: false } });
-      }
+      let newManager = null;
       try {
-        user = await User.create({
+        const managerId = await createUniqueUserId('manager');
+        newManager = await User.create({
           name,
           email: normalizedEmail,
           phone,
           password: tempPassword,
           role,
+          adminId: managerId,
           isTempPassword: true,
           customerId: undefined,
           primaryAccountType: undefined,
@@ -227,12 +227,26 @@ const createUser = async (req, res, next) => {
           gender: gender || '',
           dateOfBirth: dateOfBirth || null,
           guardianDetails: undefined,
-          isActive: true,
+          isActive: false,
           aadhaarNumber: aadhaarNumber || undefined,
         });
+
+        if (previousManagerIds.length > 0) {
+          await User.updateMany(
+            { _id: { $in: previousManagerIds } },
+            { $set: { isActive: false } }
+          );
+        }
+
+        newManager.isActive = true;
+        await newManager.save({ validateBeforeSave: false });
+        user = newManager;
       } catch (createError) {
         if (previousManagerIds.length > 0) {
           await User.updateMany({ _id: { $in: previousManagerIds } }, { $set: { isActive: true } }).catch(() => {});
+        }
+        if (newManager?._id) {
+          await User.deleteOne({ _id: newManager._id }).catch(() => {});
         }
         throw createError;
       }
@@ -255,7 +269,7 @@ const createUser = async (req, res, next) => {
             ? 'User invitation sent successfully. Customer account will be activated after first login.'
             : 'User invitation created, but the welcome email could not be sent.')
         : (emailStatus.sent
-            ? 'User created successfully and login credentials sent to customer email.'
+            ? `User created successfully and login credentials sent to ${role === 'manager' ? 'manager' : 'customer'} email.`
             : 'User created successfully, but the welcome email could not be sent.'),
       emailSent: emailStatus.sent,
       emailWarning: emailStatus.warning,

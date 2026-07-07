@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { protect, authorize } = require('../middleware/auth');
+const { protect, authorize, requireKycApproved } = require('../middleware/auth');
 const {
   submitLimitRequest,
   getMyLimitRequests,
@@ -13,8 +13,8 @@ const {
 router.use(protect);
 
 // Customer endpoints
-router.post('/request', submitLimitRequest);
-router.get('/my-requests', getMyLimitRequests);
+router.post('/request', authorize('customer'), requireKycApproved, submitLimitRequest);
+router.get('/my-requests', authorize('customer'), requireKycApproved, getMyLimitRequests);
 
 // Manager endpoints
 router.get('/pending', authorize('manager'), getPendingLimitRequests);

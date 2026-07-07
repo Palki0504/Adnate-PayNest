@@ -9,6 +9,7 @@ import {
   Add, Edit, Delete, Person, Check, Close, CheckCircle, Send,
 } from '@mui/icons-material';
 import { accountAPI, transactionAPI } from '../../services/api';
+import { getDisplayName } from '../../utils/textFormat';
 import TablePaginationControls from '../../components/common/TablePaginationControls';
 import useTablePagination from '../../hooks/useTablePagination';
 
@@ -409,7 +410,7 @@ const TransferDialog = ({ open, onClose, beneficiary, onSubmit, loading = false,
       <DialogContent sx={{ bgcolor: '#FFFFFF', pt: 3, pb: 3 }}>
         <Box sx={{ mb: 2.5, p: 2, mt: 1, background: '#F9FAFB', borderRadius: '12px', border: '1px solid #E5E7EB' }}>
           <Typography sx={{ color: '#6B7280', fontSize: '0.78rem', mb: 0.5 }}>Recipient Information</Typography>
-          <Typography sx={{ color: '#111827', fontWeight: 700, fontSize: '1rem' }}>{beneficiary.beneficiaryName}</Typography>
+          <Typography sx={{ color: '#111827', fontWeight: 700, fontSize: '1rem' }}>{getDisplayName(beneficiary.beneficiaryName, '')}</Typography>
           <Typography sx={{ color: '#4B5563', fontSize: '0.85rem' }}>Customer ID: {beneficiary.customerId}</Typography>
           {beneficiary.accountNumber && (
             <Typography sx={{ color: '#4B5563', fontSize: '0.85rem' }}>
@@ -594,7 +595,7 @@ const SuccessDialog = ({ open, onClose, data }) => {
           Transfer Successful!
         </Typography>
         <Typography sx={{ color: '#4B5563', fontSize: '0.85rem', mb: 3 }}>
-          Funds have been sent to {data.beneficiaryNickname} ({data.beneficiaryName})
+          Funds have been sent to {data.beneficiaryNickname} ({getDisplayName(data.beneficiaryName, '')})
         </Typography>
 
         <Box sx={{ p: 2.5, bgcolor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '12px', mb: 3, textAlign: 'left' }}>
@@ -841,7 +842,7 @@ const BeneficiariesPage = () => {
                         {ben.nickname}
                       </Box>
                     </TableCell>
-                    <TableCell sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.85rem' }}>{ben.beneficiaryName}</TableCell>
+                    <TableCell sx={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.85rem' }}>{getDisplayName(ben.beneficiaryName, '')}</TableCell>
                     <TableCell sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.8rem' }}>
                       <Typography sx={{ color: 'rgba(255,255,255,0.65)', fontSize: '0.8rem', fontFamily: 'monospace' }}>
                         {ben.accountNumber || ben.customerId}

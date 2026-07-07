@@ -2,12 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Drawer, List, ListItem, ListItemIcon, ListItemText, ListItemButton,
   Typography, Avatar, Badge, Divider, IconButton, Tooltip, useMediaQuery,
-  useTheme, AppBar, Toolbar,
+  useTheme, AppBar, Toolbar, Collapse,
 } from '@mui/material';
 import {
   Dashboard, Pending, People, Notifications, Person,
   Logout, Menu as MenuIcon, TrendingUp,
-  ReceiptLong,
+  ReceiptLong, AccountBalanceWallet, Savings, Autorenew, ExpandLess, ExpandMore, VerifiedUser,
 } from '@mui/icons-material';
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
@@ -23,6 +23,9 @@ import OverdraftManagement from './OverdraftManagement';
 import CustomerMonitoring from './CustomerMonitoring';
 import ManagerNotifications from './ManagerNotifications';
 import ManagerProfile from './ManagerProfile';
+import LoanManagement from './LoanManagement';
+import InvestmentManagement from './InvestmentManagement';
+import KycVerification from './KycVerification';
 
 const SIDEBAR_WIDTH = 260;
 const SIDEBAR_COLLAPSED = SIDEBAR_WIDTH;
@@ -32,7 +35,25 @@ const NAV_ITEMS = [
   { label: 'Pending Approvals',  icon: <Pending />,        path: 'approvals' },
   { label: 'Transactions',       icon: <ReceiptLong />,    path: 'transactions' },
   { label: 'Overdraft Mgmt',     icon: <TrendingUp />,     path: 'overdraft' },
-  { label: 'Customers',          icon: <People />,         path: 'customers' },
+  { label: 'Loan Management',    icon: <AccountBalanceWallet />, path: 'loans' },
+  {
+    label: 'Investments Management',
+    icon: <TrendingUp />,
+    path: 'investments',
+    children: [
+      { label: 'FD (Fixed Deposits)', icon: <Savings />, path: 'investments/fd', url: '/manager/investments/fd' },
+      { label: 'RD (Recurring Deposits)', icon: <Autorenew />, path: 'investments/rd', url: '/manager/investments/rd' },
+    ],
+  },
+  {
+    label: 'Customer Management',
+    icon: <People />,
+    path: 'customers',
+    children: [
+      { label: 'Customers', icon: <People />, path: 'customers', url: '/manager/customers' },
+      { label: 'KYC Verification', icon: <VerifiedUser />, path: 'kyc-verification', url: '/manager/kyc-verification' },
+    ],
+  },
   { label: 'Notifications',      icon: <Notifications />,  path: 'notifications', badge: true },
   { label: 'Profile',            icon: <Person />,         path: 'profile' },
 ];
@@ -47,6 +68,8 @@ const ManagerDashboard = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const collapsed = false;
   const [unreadCount, setUnreadCount] = useState(0);
+  const [investmentsExpanded, setInvestmentsExpanded] = useState(false);
+  const [customersExpanded, setCustomersExpanded] = useState(false);
 
   useEffect(() => {
     const fetchNotifications = async () => {
@@ -66,11 +89,24 @@ const ManagerDashboard = () => {
   };
 
   const getActivePath = () => {
-    const parts = location.pathname.split('/');
-    return parts[2] || '';
+    const prefix = location.pathname.startsWith('/manager-dashboard/')
+      ? '/manager-dashboard/'
+      : location.pathname.startsWith('/manager/')
+        ? '/manager/'
+        : '';
+    return prefix ? location.pathname.split(prefix)[1] || '' : '';
   };
 
   const activePath = getActivePath();
+  const investmentsActive = activePath.startsWith('investments/');
+  const customersActive = activePath === 'customers' || activePath === 'kyc-verification';
+
+  useEffect(() => {
+    if (investmentsActive) setInvestmentsExpanded(true);
+  }, [investmentsActive]);
+  useEffect(() => {
+    if (customersActive) setCustomersExpanded(true);
+  }, [customersActive]);
 
   const sidebarContent = (
     <Box
@@ -145,51 +181,106 @@ const ManagerDashboard = () => {
         }}
       >
         {NAV_ITEMS.map((item) => {
-          const isActive = activePath === item.path;
+          const hasChildren = Array.isArray(item.children);
+          const isActive = hasChildren ? item.children.some((child) => activePath === child.path) : activePath === item.path;
+          const isExpanded = item.path === 'customers' ? customersExpanded : investmentsExpanded;
           return (
-            <ListItem key={item.label} disablePadding sx={{ px: collapsed && !isMobile ? 0.5 : 1, mb: 0.25 }}>
-              <Tooltip title={collapsed && !isMobile ? item.label : ''} placement="right">
-                <ListItemButton
-                  onClick={() => {
-                    navigate(`/manager-dashboard${item.path ? `/${item.path}` : ''}`);
-                    if (isMobile) setMobileOpen(false);
-                  }}
-                  sx={{
-                    borderRadius: '10px',
-                    px: collapsed && !isMobile ? 1 : 1.5,
-                    py: 1,
-                    justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
-                    background: isActive ? 'linear-gradient(135deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05))' : 'transparent',
-                    border: isActive ? '1px solid rgba(245,158,11,0.2)' : '1px solid transparent',
-                    '&:hover': { background: isActive ? undefined : 'rgba(255,255,255,0.04)' },
-                  }}
-                >
-                  <ListItemIcon
+            <Box key={item.label} sx={{ px: collapsed && !isMobile ? 0.5 : 1, mb: hasChildren ? 0.8 : 0.25 }}>
+              <ListItem disablePadding>
+                <Tooltip title={collapsed && !isMobile ? item.label : ''} placement="right">
+                  <ListItemButton
+                    onClick={() => {
+                      if (hasChildren) {
+                        if (item.path === 'customers') {
+                          setCustomersExpanded((current) => !current);
+                        } else {
+                          setInvestmentsExpanded((current) => !current);
+                        }
+                        return;
+                      }
+                      navigate(`/manager-dashboard${item.path ? `/${item.path}` : ''}`);
+                      if (isMobile) setMobileOpen(false);
+                    }}
                     sx={{
-                      minWidth: collapsed && !isMobile ? 'unset' : 38,
-                      color: isActive ? '#f59e0b' : 'rgba(255,255,255,0.45)',
-                      justifyContent: 'center',
+                      borderRadius: '10px',
+                      px: collapsed && !isMobile ? 1 : 1.5,
+                      py: 1,
+                      justifyContent: collapsed && !isMobile ? 'center' : 'flex-start',
+                      background: isActive ? 'linear-gradient(135deg, rgba(37,99,235,0.22), rgba(96,165,250,0.08))' : 'transparent',
+                      border: isActive ? '1px solid rgba(96,165,250,0.32)' : '1px solid transparent',
+                      boxShadow: isActive ? '0 10px 24px rgba(37,99,235,0.12)' : 'none',
+                      '&:hover': { background: isActive ? undefined : 'rgba(255,255,255,0.04)' },
                     }}
                   >
-                    {item.badge ? (
-                      <Badge badgeContent={unreadCount || 0} color="error" max={99}>
-                        {item.icon}
-                      </Badge>
-                    ) : item.icon}
-                  </ListItemIcon>
-                  {(!collapsed || isMobile) && (
-                    <ListItemText
-                      primary={item.label}
-                      primaryTypographyProps={{
-                        fontSize: '0.875rem',
-                        fontWeight: isActive ? 700 : 500,
-                        color: isActive ? '#f59e0b' : 'rgba(255,255,255,0.65)',
+                    <ListItemIcon
+                      sx={{
+                        minWidth: collapsed && !isMobile ? 'unset' : 38,
+                        color: isActive ? '#60A5FA' : 'rgba(255,255,255,0.45)',
+                        justifyContent: 'center',
                       }}
-                    />
-                  )}
-                </ListItemButton>
-              </Tooltip>
-            </ListItem>
+                    >
+                      {item.badge ? (
+                        <Badge badgeContent={unreadCount || 0} color="error" max={99}>
+                          {item.icon}
+                        </Badge>
+                      ) : item.icon}
+                    </ListItemIcon>
+                    {(!collapsed || isMobile) && (
+                      <>
+                        <ListItemText
+                          primary={item.label}
+                          primaryTypographyProps={{
+                            fontSize: '0.875rem',
+                            fontWeight: isActive ? 700 : 500,
+                            color: isActive ? '#BFDBFE' : 'rgba(255,255,255,0.65)',
+                          }}
+                        />
+                        {hasChildren && (
+                          <Box sx={{ color: isActive ? '#60A5FA' : 'rgba(255,255,255,0.45)', transition: 'transform .25s ease', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                            {isExpanded ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
+                          </Box>
+                        )}
+                      </>
+                    )}
+                  </ListItemButton>
+                </Tooltip>
+              </ListItem>
+              {hasChildren && (!collapsed || isMobile) && (
+                <Collapse in={isExpanded} timeout={260} unmountOnExit>
+                  <Box sx={{ mt: 0.8, ml: 2.4, pl: 1.25, py: 0.35, borderLeft: '2px solid rgba(96,165,250,0.28)', borderRadius: '0 12px 12px 0' }}>
+                    {item.children.map((child) => {
+                      const childActive = activePath === child.path;
+                      return (
+                        <ListItem key={child.path} disablePadding sx={{ mb: 0.75 }}>
+                          <ListItemButton
+                            onClick={() => {
+                              navigate(child.url);
+                              if (isMobile) setMobileOpen(false);
+                            }}
+                            sx={{
+                              borderRadius: '10px',
+                              py: 1.05,
+                              px: 1.2,
+                              background: childActive ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.035)',
+                              borderLeft: childActive ? '4px solid #60A5FA' : '4px solid transparent',
+                              boxShadow: childActive ? '0 8px 18px rgba(59,130,246,0.18)' : 'none',
+                              transition: 'all .25s ease',
+                              '&:hover': { background: '#1A3A7A', transform: 'translateX(4px)' },
+                            }}
+                          >
+                            <ListItemIcon sx={{ minWidth: 32, color: childActive ? '#93C5FD' : '#60A5FA' }}>{child.icon}</ListItemIcon>
+                            <ListItemText
+                              primary={child.label}
+                              primaryTypographyProps={{ fontSize: '0.82rem', fontWeight: childActive ? 800 : 600, color: childActive ? '#93C5FD' : '#fff' }}
+                            />
+                          </ListItemButton>
+                        </ListItem>
+                      );
+                    })}
+                  </Box>
+                </Collapse>
+              )}
+            </Box>
           );
         })}
       </List>
@@ -253,7 +344,10 @@ const ManagerDashboard = () => {
       {/* Main content */}
       <Box
         sx={{
-          flex: 1,
+          flex: isMobile ? 1 : '0 0 auto',
+          width: contentWidth,
+          minWidth: 0,
+          maxWidth: contentWidth,
           ml: isMobile ? 0 : `${collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_WIDTH}px`,
           transition: 'margin-left 0.25s ease',
           display: 'flex',
@@ -277,15 +371,29 @@ const ManagerDashboard = () => {
         )}
 
         {/* Page content */}
-        <Box sx={{ flex: 1, p: { xs: 2, md: 3 }, maxWidth: 1400, mx: 'auto', width: '100%' }}>
+        <Box sx={{
+          flex: 1,
+          p: { xs: 2, md: 3 },
+          maxWidth: 1400,
+          mx: 'auto',
+          width: '100%',
+          minWidth: 0,
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}>
           <Routes>
-            <Route path="/" element={<ManagerHome />} />
-            <Route path="/approvals" element={<ApprovalQueue />} />
-            <Route path="/transactions" element={<ManagerTransactions />} />
-            <Route path="/overdraft" element={<OverdraftManagement />} />
-            <Route path="/customers" element={<CustomerMonitoring />} />
-            <Route path="/notifications" element={<ManagerNotifications />} />
-            <Route path="/profile" element={<ManagerProfile />} />
+            <Route path="" element={<ManagerHome />} />
+            <Route path="approvals" element={<ApprovalQueue />} />
+            <Route path="transactions" element={<ManagerTransactions />} />
+            <Route path="overdraft" element={<OverdraftManagement />} />
+            <Route path="loans" element={<LoanManagement />} />
+            <Route path="investments" element={<Navigate to="fd" replace />} />
+            <Route path="investments/fd" element={<InvestmentManagement type="FD" />} />
+            <Route path="investments/rd" element={<InvestmentManagement type="RD" />} />
+            <Route path="customers" element={<CustomerMonitoring />} />
+            <Route path="kyc-verification" element={<KycVerification />} />
+            <Route path="notifications" element={<ManagerNotifications />} />
+            <Route path="profile" element={<ManagerProfile />} />
             <Route path="*" element={<Navigate to="/manager-dashboard" replace />} />
           </Routes>
         </Box>

@@ -29,6 +29,7 @@ import {
   Send, CheckCircle, Person, AccountCircle, CurrencyRupee, SwapHoriz, AccountBalance, Info,
 } from '@mui/icons-material';
 import { accountAPI, transactionAPI } from '../../services/api';
+import { getDisplayName } from '../../utils/textFormat';
 
 const formatCurrency = (amount) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(amount);
@@ -362,12 +363,12 @@ const TransferFundsPage = () => {
         <DialogContent sx={{ bgcolor: '#FFFFFF', pt: 4, pb: 4, textAlign: 'center' }}>
           <CheckCircle sx={{ fontSize: '5rem', color: '#10b981', mb: 2 }} />
           <Typography sx={{ color: '#111827', fontSize: '1.4rem', fontWeight: 800, mb: 1 }}>
-            Funds sent to {data.beneficiary.beneficiaryName}
+            Funds sent to {getDisplayName(data.beneficiary.beneficiaryName, '')}
           </Typography>
           <Box sx={{ p: 2.5, bgcolor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '12px', mb: 3, textAlign: 'left' }}>
             {[
               { label: 'Amount Sent', value: `₹${data.amount.toLocaleString('en-IN')}`, color: '#10b981' },
-              { label: 'Receiver', value: data.beneficiary.beneficiaryName },
+              { label: 'Receiver', value: getDisplayName(data.beneficiary.beneficiaryName, '') },
               { label: 'Account Number', value: data.transaction?.toAccountNumber || data.beneficiary.accountNumber },
               { label: 'Account Type', value: data.beneficiary.accountType ? `${data.beneficiary.accountType.charAt(0).toUpperCase()}${data.beneficiary.accountType.slice(1)}` : '—' },
               { label: 'Nickname', value: data.beneficiary.nickname || '—' },
@@ -550,7 +551,7 @@ const TransferFundsPage = () => {
                 <TextField
                   placeholder="Enter receiver full name"
                   name="receiverName"
-                  value={formData.receiverName}
+                  value={getDisplayName(formData.receiverName, '')}
                   fullWidth
                   InputProps={{ readOnly: true, startAdornment: <Person sx={{ color: 'rgba(255,255,255,0.4)', mr: 1, fontSize: '1.2rem' }} /> }}
                   sx={fieldSx}

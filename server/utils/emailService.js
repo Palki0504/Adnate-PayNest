@@ -1,6 +1,7 @@
 const nodemailer = require('nodemailer');
 const path = require('path');
 const { randomUUID } = require('crypto');
+const { getDisplayName } = require('./nameFormat');
 
 const BANK_LOGO_PATH = path.join(__dirname, '..', 'assets', 'adnate-paynest-logo.png');
 const BANK_LOGO_CID = 'adnate-paynest-logo';
@@ -12,6 +13,19 @@ const EMAIL_LOGO_HTML = `
     <div style="margin-top:8px;color:#0f2d5e;font-size:21px;font-weight:800;letter-spacing:.2px;">Adnate PayNest</div>
   </div>`;
 const EMAIL_GREETING_HTML = '<p data-paynest-greeting="true" style="margin:0 0 14px;color:#0f172a;font-size:16px;font-weight:700;">Hey PayNester Elite &#127775;,</p>';
+const getClientUrl = () => {
+  const configuredUrl = (process.env.CLIENT_URL || process.env.FRONTEND_URL || '').trim();
+
+  if (configuredUrl) {
+    return configuredUrl.replace(/\/+$/, '');
+  }
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('CLIENT_URL is required in production to generate customer login links.');
+  }
+
+  return 'https://adnate-paynest.netlify.app';
+};
 const buildEmailClosingHtml = (messageKey) => `
   <table role="presentation" data-paynest-closing="${messageKey}" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;margin:16px 0 0;">
     <tr>
@@ -163,20 +177,56 @@ const decorateMailOptions = (mailOptions) => {
 
 const getEmailCredentials = () => ({
   user: process.env.EMAIL_USER?.trim(),
-  pass: process.env.EMAIL_PASS?.trim(),
+  pass: getEmailService() === 'gmail'
+    ? process.env.EMAIL_PASS?.replace(/\s/g, '')
+    : process.env.EMAIL_PASS?.trim(),
 });
+
+const getEmailService = () => (process.env.EMAIL_SERVICE || 'smtp').trim().toLowerCase();
 
 const isPlaceholderConfig = ({ user, pass }) =>
   !user ||
   !pass ||
   user.includes('your-email') ||
   pass.includes('your-app-password') ||
-  user.includes('your_mailtrap');
+  user.includes('your_mailtrap') ||
+  user.includes('replace-with') ||
+  pass.includes('replace-with');
+
+const getEmailAuthErrorMessage = () => {
+  if (getEmailService() === 'gmail') {
+    return 'Gmail rejected the login. Use a Google App Password for EMAIL_PASS, not your normal Gmail password.';
+  }
+
+  return 'Email provider rejected the login. Verify EMAIL_USER and EMAIL_PASS environment variables.';
+};
+
+const formatEmailError = (error) => [
+  error.code && `code=${error.code}`,
+  error.command && `command=${error.command}`,
+  error.responseCode && `responseCode=${error.responseCode}`,
+  error.response && `response=${error.response}`,
+  error.message && `message=${error.message}`,
+].filter(Boolean).join(' | ') || String(error);
+
+const getDefaultFromAddress = (user) => `"Adnate PayNest" <${user}>`;
+
+let cachedTransporter;
 
 // ─── Create transporter (SMTP or Gmail service) ─────────────────────────────
 const createTransporter = () => {
   const auth = getEmailCredentials();
-  const transporter = process.env.EMAIL_SERVICE === 'gmail'
+
+  if (cachedTransporter) {
+    return cachedTransporter;
+  }
+
+  if (isPlaceholderConfig(auth)) {
+    throw new Error('Email is not configured. Set EMAIL_USER and EMAIL_PASS environment variables.');
+  }
+
+  const service = getEmailService();
+  const transporter = service === 'gmail'
     ? nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -185,8 +235,11 @@ const createTransporter = () => {
       },
     })
     : (() => {
-      const host = process.env.EMAIL_HOST || 'sandbox.smtp.mailtrap.io';
-      const port = parseInt(process.env.EMAIL_PORT, 10) || 2525;
+      const host = process.env.EMAIL_HOST?.trim();
+      const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
+      if (!host) {
+        throw new Error('EMAIL_HOST is required when EMAIL_SERVICE is smtp.');
+      }
       return nodemailer.createTransport({
         host,
         port,
@@ -196,8 +249,46 @@ const createTransporter = () => {
     })();
 
   const sendMail = transporter.sendMail.bind(transporter);
-  transporter.sendMail = (mailOptions) => sendMail(decorateMailOptions(mailOptions));
+  transporter.sendMail = async (mailOptions) => {
+    const preparedOptions = decorateMailOptions({
+      from: getDefaultFromAddress(auth.user),
+      ...mailOptions,
+    });
+
+    try {
+      const info = await sendMail(preparedOptions);
+      console.log(`[EMAIL SENT] to=${preparedOptions.to} subject="${preparedOptions.subject}" messageId=${info.messageId || 'n/a'}`);
+      return info;
+    } catch (error) {
+      console.error(`[EMAIL ERROR] to=${preparedOptions.to} subject="${preparedOptions.subject}" ${formatEmailError(error)}`);
+      throw error;
+    }
+  };
+
+  cachedTransporter = transporter;
   return transporter;
+};
+
+const verifyEmailTransporter = async () => {
+  const auth = getEmailCredentials();
+  if (isPlaceholderConfig(auth)) {
+    const message = 'Email is not configured. Set EMAIL_USER and EMAIL_PASS environment variables.';
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[EMAIL VERIFY FAILED] ${message}`);
+    } else {
+      console.warn(`[EMAIL VERIFY SKIPPED] ${message}`);
+    }
+    return false;
+  }
+
+  try {
+    await createTransporter().verify();
+    console.log(`[EMAIL VERIFY OK] service=${getEmailService()} user=${auth.user}`);
+    return true;
+  } catch (error) {
+    console.error(`[EMAIL VERIFY FAILED] ${getEmailAuthErrorMessage()} ${formatEmailError(error)}`);
+    return false;
+  }
 };
 
 const escapeHtml = (value) => String(value ?? '')
@@ -358,6 +449,7 @@ const generateTempPassword = (email) => {
  * Send temporary password email to user
  */
 const sendTempPasswordEmail = async (toEmail, tempPassword, userName) => {
+  const displayName = getDisplayName(userName);
   const auth = getEmailCredentials();
   if (isPlaceholderConfig(auth)) {
     throw new Error(
@@ -374,7 +466,7 @@ const sendTempPasswordEmail = async (toEmail, tempPassword, userName) => {
         <p style="margin: 8px 0 0; color: rgba(10,14,39,0.7); font-size: 14px;">Password Reset Request</p>
       </div>
       <div style="padding: 32px 24px;">
-        <p style="color: #ffffff; font-size: 16px; margin: 0 0 8px;">Hello <strong>${userName}</strong>,</p>
+        <p style="color: #ffffff; font-size: 16px; margin: 0 0 8px;">Hello <strong>${displayName}</strong>,</p>
         <p style="color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.6; margin: 0 0 24px;">
           We received a request to reset your password. Here is your temporary password:
         </p>
@@ -400,7 +492,7 @@ const sendTempPasswordEmail = async (toEmail, tempPassword, userName) => {
   `;
 
   const plainText = [
-    `Hello ${userName},`,
+    `Hello ${displayName},`,
     '',
     'We received a request to reset your Adnate PayNest password.',
     '',
@@ -427,7 +519,7 @@ const sendTempPasswordEmail = async (toEmail, tempPassword, userName) => {
     const msg = err.message || '';
     if (/535|534|EAUTH|Invalid login|authentication failed/i.test(msg)) {
       throw new Error(
-        'Mailtrap rejected the login. Verify EMAIL_USER and EMAIL_PASS environment variables.'
+        getEmailAuthErrorMessage()
       );
     }
     throw err;
@@ -438,6 +530,7 @@ const sendTempPasswordEmail = async (toEmail, tempPassword, userName) => {
  * Send password reset email with secure token link to user
  */
 const sendPasswordResetEmail = async (toEmail, token, userName) => {
+  const displayName = getDisplayName(userName);
   const auth = getEmailCredentials();
   if (isPlaceholderConfig(auth)) {
     throw new Error(
@@ -446,7 +539,7 @@ const sendPasswordResetEmail = async (toEmail, token, userName) => {
   }
 
   const transporter = createTransporter();
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const clientUrl = getClientUrl();
   const resetLink = `${clientUrl}/reset-password?token=${token}`;
 
   const htmlContent = `
@@ -456,7 +549,7 @@ const sendPasswordResetEmail = async (toEmail, token, userName) => {
         <p style="margin: 8px 0 0; color: rgba(10,14,39,0.7); font-size: 14px;">Password Reset Request</p>
       </div>
       <div style="padding: 32px 24px;">
-        <p style="color: #ffffff; font-size: 17px; font-weight: 600; margin: 0 0 16px;">Hey PayNester Elite 🌟,</p>
+        <p style="color: #ffffff; font-size: 17px; font-weight: 600; margin: 0 0 16px;">Hey ${displayName} 🌟,</p>
         <p style="color: rgba(255,255,255,0.7); font-size: 14px; line-height: 1.7; margin: 0 0 16px;">
           We received a request to reset the password for your Adnate PayNest account.
         </p>
@@ -489,7 +582,7 @@ const sendPasswordResetEmail = async (toEmail, token, userName) => {
   `;
 
   const plainText = [
-    'Hey PayNester Elite 🌟,',
+    `Hey ${displayName} 🌟,`,
     '',
     'We received a request to reset the password for your Adnate PayNest account.',
     '',
@@ -520,7 +613,7 @@ const sendPasswordResetEmail = async (toEmail, token, userName) => {
     const msg = err.message || '';
     if (/535|534|EAUTH|Invalid login|authentication failed/i.test(msg)) {
       throw new Error(
-        'Mailtrap rejected the login. Verify EMAIL_USER and EMAIL_PASS environment variables.'
+        getEmailAuthErrorMessage()
       );
     }
     throw err;
@@ -532,7 +625,12 @@ const sendPasswordResetEmail = async (toEmail, token, userName) => {
  * Design: white card, navy blue header, separate credentials box.
  */
 const createNewUserEmailContent = ({ role, userName, emailAddress, tempPassword, clientUrl }) => {
-  const subject = 'Welcome to Adnate PayNest \u2013 Your Account Login Credentials';
+  const isManager = role === 'manager';
+  const displayName = getDisplayName(userName, isManager ? 'Manager' : 'Customer');
+  const accountLabel = isManager ? 'manager' : 'customer';
+  const portalLabel = isManager ? 'manager portal' : 'customer portal';
+  const greeting = isManager ? 'Hey PayNester Manager&#127775;,' : `Hey ${displayName} &#127775;,`;
+  const subject = `Welcome to Adnate PayNest \u2013 Your ${isManager ? 'Manager ' : ''}Login Credentials`;
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -560,14 +658,14 @@ const createNewUserEmailContent = ({ role, userName, emailAddress, tempPassword,
           <!-- Body Content -->
           <tr>
             <td style="padding:0 36px 36px;color:#f1f5f9;">
-              <p style="margin:0 0 20px;font-size:18px;font-weight:700;color:#ffffff;">Hey PayNester Elite &#127775;,</p>
+              <p style="margin:0 0 20px;font-size:18px;font-weight:700;color:#ffffff;">${greeting}</p>
 
               <p style="margin:0 0 16px;font-size:14px;line-height:1.7;color:#cbd5e1;">
                 Welcome to <strong>Adnate PayNest Bank</strong>.
               </p>
 
               <p style="margin:0 0 24px;font-size:14px;line-height:1.7;color:#cbd5e1;">
-                Your customer account has been created successfully. Below are your temporary login credentials. Please use these to sign in and activate your account.
+                Your ${accountLabel} account has been created successfully. Below are your ${isManager ? '' : 'temporary '}login credentials. Please use these to sign in and activate your account.
               </p>
 
               <!-- ─── Credentials Box ─── -->
@@ -585,7 +683,7 @@ const createNewUserEmailContent = ({ role, userName, emailAddress, tempPassword,
                       </tr>
                       <tr>
                         <td style="padding:12px 0 0;">
-                          <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">Temporary Password</span><br/>
+                          <span style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">${isManager ? 'Password' : 'Temporary Password'}</span><br/>
                           <strong style="font-size:18px;color:#0a2e5c;font-family:'Courier New',monospace;letter-spacing:1px;">${tempPassword}</strong>
                         </td>
                       </tr>
@@ -600,13 +698,13 @@ const createNewUserEmailContent = ({ role, userName, emailAddress, tempPassword,
                   <td align="center">
                     <a href="${clientUrl}/login"
                       style="display:inline-block;background-color:#0a2e5c;color:#ffffff !important;font-size:15px;font-weight:700;text-decoration:none;padding:13px 36px;border-radius:10px;border:1px solid #0a2e5c;letter-spacing:0.3px;">
-                      Login to Portal
+                      Login to ${isManager ? 'Manager Portal' : 'Portal'}
                     </a>
                   </td>
                 </tr>
               </table>
 
-              <!-- Security Notice -->
+              ${isManager ? '' : `<!-- Security Notice -->
               <table data-paynest-card="true" role="presentation" width="100%" cellpadding="0" cellspacing="0"
                 style="background-color:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;margin-bottom:16px;">
                 <tr>
@@ -616,7 +714,7 @@ const createNewUserEmailContent = ({ role, userName, emailAddress, tempPassword,
                     </p>
                   </td>
                 </tr>
-              </table>
+              </table>`}
 
               <p style="margin:0;font-size:14px;color:#cbd5e1;line-height:1.7;">
                 Thank you for using Adnate PayNest.<br/><br/>
@@ -643,13 +741,13 @@ const createNewUserEmailContent = ({ role, userName, emailAddress, tempPassword,
 </html>
   `;
 
-  const textContent = [
+  let textContent = [
     'Hey PayNester Elite 🌟,',
     '',
     'Welcome to Adnate PayNest Bank.',
     '',
     'Your account has been successfully created by the admin.',
-    'Please use the login credentials below to access your customer portal:',
+    `Please use the login credentials below to access your ${portalLabel}:`,
     '',
     '-----------------------------',
     'LOGIN CREDENTIALS',
@@ -669,6 +767,15 @@ const createNewUserEmailContent = ({ role, userName, emailAddress, tempPassword,
     'Adnate PayNest Team 🤝🏻',
   ].join('\n');
 
+  if (isManager) {
+    textContent = textContent
+      .replace(/^[^\n]+/, 'Hey PayNester Manager🌟,')
+      .replace('Temporary Password', 'Password')
+      .replace('IMPORTANT: For your security, you will be forced to change your password immediately after first login.\n', '')
+      .replace('Please do not share your password, OTP, or banking details with anyone.\n\n', '')
+      .replace(/Adnate PayNest Team[^\n]*$/, 'Adnate PayNest Team 🤝🏻');
+  }
+
   return { subject, textContent, htmlContent };
 };
 
@@ -684,7 +791,7 @@ const sendNewUserWelcomeEmail = async (toEmail, tempPassword, userName, role, us
   }
 
   const transporter = createTransporter();
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const clientUrl = getClientUrl();
   const emailContent = createNewUserEmailContent({
     role,
     userName,
@@ -707,7 +814,7 @@ const sendNewUserWelcomeEmail = async (toEmail, tempPassword, userName, role, us
     const msg = err.message || '';
     if (/535|534|EAUTH|Invalid login|authentication failed/i.test(msg)) {
       throw new Error(
-        'Mailtrap rejected the login. Verify EMAIL_USER and EMAIL_PASS environment variables.'
+        getEmailAuthErrorMessage()
       );
     }
     throw err;
@@ -715,6 +822,8 @@ const sendNewUserWelcomeEmail = async (toEmail, tempPassword, userName, role, us
 };
 
 const sendTransferSuccessEmail = async (toEmail, receiverName, senderName, amount, transactionId, direction = 'debit', fromAccount, toAccount) => {
+  const displayReceiverName = getDisplayName(receiverName, '');
+  const displaySenderName = getDisplayName(senderName, '');
   const auth = getEmailCredentials();
   if (isPlaceholderConfig(auth)) {
     console.warn('Email is not configured. Skipping transfer success email.');
@@ -736,7 +845,7 @@ const sendTransferSuccessEmail = async (toEmail, receiverName, senderName, amoun
         <p style="margin: 8px 0 0; color: rgba(255,255,255,0.8); font-size: 14px;">Adnate PayNest</p>
       </div>
       <div style="padding: 32px 24px;">
-        <p style="color: #ffffff; font-size: 16px; margin: 0 0 24px;">Dear ${receiverName},</p>
+        <p style="color: #ffffff; font-size: 16px; margin: 0 0 24px;">Dear ${displayReceiverName},</p>
         <p style="color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.6; margin: 0 0 24px;">
           Your account has been ${isCredit ? 'credited' : 'debited'} successfully! Here are the transaction details:
         </p>
@@ -752,7 +861,7 @@ const sendTransferSuccessEmail = async (toEmail, receiverName, senderName, amoun
             </div>
             <div>
               <p style="color: rgba(255,255,255,0.5); font-size: 12px; margin: 0 0 4px; text-transform: uppercase;">${isCredit ? 'Received From' : 'Sent To'}</p>
-              <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">${isCredit ? senderName : receiverName}</p>
+              <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">${isCredit ? displaySenderName : displayReceiverName}</p>
             </div>
             <div>
               <p style="color: rgba(255,255,255,0.5); font-size: 12px; margin: 0 0 4px; text-transform: uppercase;">Date & Time</p>
@@ -780,7 +889,7 @@ const sendTransferSuccessEmail = async (toEmail, receiverName, senderName, amoun
     'Transaction Details:',
     `* Transaction ID: ${transactionId}`,
     `* Amount ${isCredit ? 'Credited' : 'Debited'}: ₹${amount}`,
-    `* ${isCredit ? 'Received From' : 'Sent To'}: ${isCredit ? senderName : receiverName}`,
+    `* ${isCredit ? 'Received From' : 'Sent To'}: ${isCredit ? displaySenderName : displayReceiverName}`,
     `* Date & Time: ${formattedDate}, ${formattedTime}`,
     '',
     'Thank you for using Adnate PayNest.',
@@ -808,6 +917,8 @@ const sendTransferSuccessEmail = async (toEmail, receiverName, senderName, amoun
  * Send transfer failure notification email
  */
 const sendTransferFailureEmail = async (toEmail, senderName, recipientName, amount, reason) => {
+  const displaySenderName = getDisplayName(senderName);
+  const displayRecipientName = getDisplayName(recipientName, '');
   const auth = getEmailCredentials();
   if (isPlaceholderConfig(auth)) {
     console.warn('Email is not configured. Skipping transfer failure email.');
@@ -827,7 +938,7 @@ const sendTransferFailureEmail = async (toEmail, senderName, recipientName, amou
         <p style="margin: 8px 0 0; color: rgba(255,255,255,0.8); font-size: 14px;">Adnate PayNest</p>
       </div>
       <div style="padding: 32px 24px;">
-        <p style="color: #ffffff; font-size: 16px; margin: 0 0 24px;">Hello <strong>${senderName}</strong>,</p>
+        <p style="color: #ffffff; font-size: 16px; margin: 0 0 24px;">Hello <strong>${displaySenderName}</strong>,</p>
         <p style="color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.6; margin: 0 0 24px;">
           Unfortunately, your transfer could not be completed. Here are the details:
         </p>
@@ -839,7 +950,7 @@ const sendTransferFailureEmail = async (toEmail, senderName, recipientName, amou
             </div>
             <div>
               <p style="color: rgba(255,255,255,0.5); font-size: 12px; margin: 0 0 4px; text-transform: uppercase;">To Recipient</p>
-              <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">${recipientName}</p>
+              <p style="color: rgba(255,255,255,0.8); font-size: 13px; margin: 0;">${displayRecipientName}</p>
             </div>
           </div>
           <div style="background: rgba(239,68,68,0.2); border-left: 4px solid #ef4444; border-radius: 6px; padding: 12px; margin-top: 12px;">
@@ -866,7 +977,7 @@ const sendTransferFailureEmail = async (toEmail, senderName, recipientName, amou
     'Your transfer could not be completed.',
     '',
     `Amount: ₹${amount}`,
-    `To: ${recipientName}`,
+    `To: ${displayRecipientName}`,
     `Reason: ${reason}`,
     '',
     'Please try again or contact support.',
@@ -880,7 +991,7 @@ const sendTransferFailureEmail = async (toEmail, senderName, recipientName, amou
   const mailOptions = {
     from: `"Adnate PayNest" <${process.env.EMAIL_USER}>`,
     to: toEmail,
-    subject: `✗ Transfer Failed — ₹${amount} to ${recipientName}`,
+    subject: `✗ Transfer Failed — ₹${amount} to ${displayRecipientName}`,
     text: plainText,
     html: htmlContent,
   };
@@ -909,6 +1020,8 @@ const sendTransferNotificationEmail = async (
   timeStr = '',
   isReceiver = false
 ) => {
+  const displayName = getDisplayName(userName);
+  const displayOtherPartyName = getDisplayName(otherPartyName, '');
   const auth = getEmailCredentials();
   if (isPlaceholderConfig(auth)) {
     console.warn('Email is not configured. Skipping transfer notification email.');
@@ -926,13 +1039,13 @@ const sendTransferNotificationEmail = async (
           <p style="margin: 8px 0 0; color: rgba(255,255,255,0.8); font-size: 14px;">Adnate PayNest</p>
         </div>
         <div style="padding: 32px 24px;">
-          <p style="color: #ffffff; font-size: 16px; margin: 0 0 24px;">Dear Customer,</p>
+          <p style="color: #ffffff; font-size: 16px; margin: 0 0 24px;">Dear ${displayName},</p>
           <p style="color: rgba(255,255,255,0.6); font-size: 14px; line-height: 1.6; margin: 0 0 24px;">
-            Your transfer to ${otherPartyName} could not be completed. Here are the details:
+            Your transfer to ${displayOtherPartyName} could not be completed. Here are the details:
           </p>
           <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 12px; padding: 20px; margin: 0 0 24px;">
             <p style="color: rgba(255,255,255,0.6); font-size: 13px; margin: 0 0 12px;"><strong>Amount:</strong> ₹${amount.toLocaleString('en-IN')}</p>
-            <p style="color: rgba(255,255,255,0.6); font-size: 13px; margin: 0 0 12px;"><strong>Recipient:</strong> ${otherPartyName}</p>
+            <p style="color: rgba(255,255,255,0.6); font-size: 13px; margin: 0 0 12px;"><strong>Recipient:</strong> ${displayOtherPartyName}</p>
             <p style="color: #fca5a5; font-size: 13px; margin: 0;"><strong>Reason:</strong> ${failureReason}</p>
           </div>
           <p style="color: rgba(255,255,255,0.4); font-size: 12px; margin: 0; line-height: 1.6;">
@@ -948,13 +1061,13 @@ const sendTransferNotificationEmail = async (
     `;
 
     const plainText = [
-     'Hey PayNester Elite 🌟,',
+     `Hey ${displayName} 🌟,`,
       '',
       'Your transfer could not be completed.',
       '',
       'Transaction Details:',
       `* Amount: ₹${amount}`,
-      `* Recipient: ${otherPartyName}`,
+      `* Recipient: ${displayOtherPartyName}`,
       `* Reason: ${failureReason}`,
       '',
       'Please contact support if you need assistance.',
@@ -992,7 +1105,7 @@ const sendTransferNotificationEmail = async (
         <p style="margin: 8px 0 0; color: rgba(255,255,255,0.8); font-size: 13px;">Adnate PayNest Transaction</p>
       </div>
       <div style="padding: 32px 24px;">
-        <p style="color: #ffffff; font-size: 15px; margin: 0 0 24px;">Dear Customer,</p>
+        <p style="color: #ffffff; font-size: 15px; margin: 0 0 24px;">Dear ${displayName},</p>
         <p style="color: rgba(255,255,255,0.65); font-size: 13px; line-height: 1.7; margin: 0 0 24px;">
           Your account has been ${isCredit ? 'successfully credited' : 'successfully debited'}.
         </p>
@@ -1011,7 +1124,7 @@ const sendTransferNotificationEmail = async (
 
           <div style="margin-bottom: 12px;">
             <p style="color: rgba(255,255,255,0.5); font-size: 11px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: 0.5px;">${isCredit ? 'Received From' : 'Sent To'}</p>
-            <p style="color: #ffffff; font-size: 13px; margin: 0;">${otherPartyName}</p>
+            <p style="color: #ffffff; font-size: 13px; margin: 0;">${displayOtherPartyName}</p>
           </div>
 
           <div style="margin-bottom: 12px;">
@@ -1049,7 +1162,7 @@ const sendTransferNotificationEmail = async (
   `;
 
   const plainText = [
-    'Hey PayNester Elite 🌟,',
+    `Hey ${displayName} 🌟,`,
     '',
     'Your account has been successfully ' + (isCredit ? 'credited' : 'debited') + '.',
     '',
@@ -1057,7 +1170,7 @@ const sendTransferNotificationEmail = async (
     '',
     `* Transaction ID: ${transactionId}`,
     `* Amount ${isCredit ? 'Credited' : 'Debited'}: ₹${amount}`,
-    `* ${isCredit ? 'Received From' : 'Sent To'}: ${otherPartyName}`,
+    `* ${isCredit ? 'Received From' : 'Sent To'}: ${displayOtherPartyName}`,
     `* Date & Time: ${dateStr}, ${timeStr}`,
     `* Available Balance: ₹${balance}`,
     `* Transaction Status: Successful`,
@@ -1089,6 +1202,7 @@ const sendTransferNotificationEmail = async (
  * Send registration approved email
  */
 const sendRegistrationApprovedEmail = async (toEmail, userName, role) => {
+  const displayName = getDisplayName(userName);
   const auth = getEmailCredentials();
   if (isPlaceholderConfig(auth)) {
     console.warn('Email not configured. Skipping registration approved email.');
@@ -1096,7 +1210,7 @@ const sendRegistrationApprovedEmail = async (toEmail, userName, role) => {
   }
   const transporter = createTransporter();
   const roleLabel = role === 'manager' ? 'Manager' : 'Customer';
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  const clientUrl = getClientUrl();
 
   const htmlContent = `
     <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a0e27;border-radius:16px;overflow:hidden;border:1px solid rgba(34,197,94,0.3);">
@@ -1105,7 +1219,7 @@ const sendRegistrationApprovedEmail = async (toEmail, userName, role) => {
         <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">Adnate PayNest</p>
       </div>
       <div style="padding:32px 24px;">
-        <p style="color:#ffffff;font-size:16px;margin:0 0 16px;">Dear <strong>${userName}</strong>,</p>
+        <p style="color:#ffffff;font-size:16px;margin:0 0 16px;">Dear <strong>${displayName}</strong>,</p>
         <p style="color:rgba(255,255,255,0.7);font-size:14px;line-height:1.7;margin:0 0 24px;">
           Great news! Your <strong>${roleLabel}</strong> account registration has been <strong style="color:#22c55e;">approved</strong> by our admin team.
           You can now log in to Adnate PayNest and start using your account.
@@ -1125,15 +1239,16 @@ const sendRegistrationApprovedEmail = async (toEmail, userName, role) => {
     from: `"Adnate PayNest" <${process.env.EMAIL_USER}>`,
     to: toEmail,
     subject: `✅ Your ${roleLabel} Account is Approved — Adnate PayNest`,
-    text: `Dear ${userName},\n\nYour ${roleLabel} account has been approved. You can now log in at ${clientUrl}/login\n\nAdnate PayNest`,
+    text: `Dear ${displayName},\n\nYour ${roleLabel} account has been approved. You can now log in at ${clientUrl}/login\n\nAdnate PayNest`,
     html: htmlContent,
-  }).catch((err) => console.error('sendRegistrationApprovedEmail error:', err.message));
+  });
 };
 
 /**
  * Send registration rejected email
  */
 const sendRegistrationRejectedEmail = async (toEmail, userName, role, reason) => {
+  const displayName = getDisplayName(userName);
   const auth = getEmailCredentials();
   if (isPlaceholderConfig(auth)) {
     console.warn('Email not configured. Skipping registration rejected email.');
@@ -1149,7 +1264,7 @@ const sendRegistrationRejectedEmail = async (toEmail, userName, role, reason) =>
         <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">Adnate PayNest</p>
       </div>
       <div style="padding:32px 24px;">
-        <p style="color:#ffffff;font-size:16px;margin:0 0 16px;">Dear <strong>${userName}</strong>,</p>
+        <p style="color:#ffffff;font-size:16px;margin:0 0 16px;">Dear <strong>${displayName}</strong>,</p>
         <p style="color:rgba(255,255,255,0.7);font-size:14px;line-height:1.7;margin:0 0 16px;">
           Unfortunately, your <strong>${roleLabel}</strong> account registration has been <strong style="color:#ef4444;">rejected</strong>.
         </p>
@@ -1163,17 +1278,18 @@ const sendRegistrationRejectedEmail = async (toEmail, userName, role, reason) =>
     from: `"Adnate PayNest" <${process.env.EMAIL_USER}>`,
     to: toEmail,
     subject: `❌ Account Registration Rejected — Adnate PayNest`,
-    text: `Dear ${userName},\n\nYour ${roleLabel} account registration was rejected.${reason ? `\nReason: ${reason}` : ''}\n\nContact support for more info.\n\nAdnate PayNest`,
+    text: `Dear ${displayName},\n\nYour ${roleLabel} account registration was rejected.${reason ? `\nReason: ${reason}` : ''}\n\nContact support for more info.\n\nAdnate PayNest`,
     html: htmlContent,
-  }).catch((err) => console.error('sendRegistrationRejectedEmail error:', err.message));
+  });
 };
 
 /**
  * Send overdraft limit increase approved email
  */
 const sendOverdraftLimitApprovedEmail = async (toEmail, userName, newLimit, comment) => {
+  const displayName = getDisplayName(userName);
   const auth = getEmailCredentials();
-  if (isPlaceholderConfig(auth)) { console.warn('Email not configured.'); return; }
+  if (isPlaceholderConfig(auth)) { throw new Error('Email is not configured. Set EMAIL_USER and EMAIL_PASS environment variables.'); }
   const transporter = createTransporter();
   const formattedLimit = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(newLimit);
 
@@ -1184,7 +1300,7 @@ const sendOverdraftLimitApprovedEmail = async (toEmail, userName, newLimit, comm
         <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">Adnate PayNest</p>
       </div>
       <div style="padding:32px 24px;">
-        <p style="color:#fff;font-size:16px;">Dear <strong>${userName}</strong>,</p>
+        <p style="color:#fff;font-size:16px;">Dear <strong>${displayName}</strong>,</p>
         <p style="color:rgba(255,255,255,0.7);font-size:14px;line-height:1.7;">Your overdraft limit increase request has been <strong style="color:#22c55e;">approved!</strong></p>
         <div style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.3);border-radius:12px;padding:20px;margin:16px 0;">
           <p style="color:rgba(255,255,255,0.5);font-size:12px;margin:0 0 4px;text-transform:uppercase;">New Overdraft Limit</p>
@@ -1199,17 +1315,18 @@ const sendOverdraftLimitApprovedEmail = async (toEmail, userName, newLimit, comm
     from: `"Adnate PayNest" <${process.env.EMAIL_USER}>`,
     to: toEmail,
     subject: `✅ Overdraft Limit Increased to ${formattedLimit} — Adnate PayNest`,
-    text: `Dear ${userName},\n\nYour overdraft limit has been increased to ${formattedLimit}.${comment ? `\n\nManager Comment: ${comment}` : ''}\n\nAdnate PayNest`,
+    text: `Dear ${displayName},\n\nYour overdraft limit has been increased to ${formattedLimit}.${comment ? `\n\nManager Comment: ${comment}` : ''}\n\nAdnate PayNest`,
     html: htmlContent,
-  }).catch((err) => console.error('sendOverdraftLimitApprovedEmail error:', err.message));
+  });
 };
 
 /**
  * Send overdraft limit increase rejected email
  */
 const sendOverdraftLimitRejectedEmail = async (toEmail, userName, comment) => {
+  const displayName = getDisplayName(userName);
   const auth = getEmailCredentials();
-  if (isPlaceholderConfig(auth)) { console.warn('Email not configured.'); return; }
+  if (isPlaceholderConfig(auth)) { throw new Error('Email is not configured. Set EMAIL_USER and EMAIL_PASS environment variables.'); }
   const transporter = createTransporter();
 
   const htmlContent = `
@@ -1219,7 +1336,7 @@ const sendOverdraftLimitRejectedEmail = async (toEmail, userName, comment) => {
         <p style="margin:8px 0 0;color:rgba(255,255,255,0.8);font-size:14px;">Adnate PayNest</p>
       </div>
       <div style="padding:32px 24px;">
-        <p style="color:#fff;font-size:16px;">Dear <strong>${userName}</strong>,</p>
+        <p style="color:#fff;font-size:16px;">Dear <strong>${displayName}</strong>,</p>
         <p style="color:rgba(255,255,255,0.7);font-size:14px;line-height:1.7;">Your overdraft limit increase request has been <strong style="color:#ef4444;">rejected</strong>.</p>
         ${comment ? `<div style="background:rgba(239,68,68,0.1);border-left:4px solid #ef4444;border-radius:8px;padding:16px;"><p style="color:#fca5a5;font-size:13px;margin:0;"><strong>Reason:</strong> ${comment}</p></div>` : ''}
         <p style="color:rgba(255,255,255,0.4);font-size:12px;margin-top:16px;">You can submit a new request after reviewing your usage. Contact support if you have questions.</p>
@@ -1231,12 +1348,426 @@ const sendOverdraftLimitRejectedEmail = async (toEmail, userName, comment) => {
     from: `"Adnate PayNest" <${process.env.EMAIL_USER}>`,
     to: toEmail,
     subject: `❌ Overdraft Limit Increase Rejected — Adnate PayNest`,
-    text: `Dear ${userName},\n\nYour overdraft limit increase request was rejected.${comment ? `\n\nReason: ${comment}` : ''}\n\nAdnate PayNest`,
+    text: `Dear ${displayName},\n\nYour overdraft limit increase request was rejected.${comment ? `\n\nReason: ${comment}` : ''}\n\nAdnate PayNest`,
     html: htmlContent,
-  }).catch((err) => console.error('sendOverdraftLimitRejectedEmail error:', err.message));
+  });
+};
+
+const sendMonthlyTransactionStatementEmail = async ({
+  toEmail,
+  userName,
+  monthLabel,
+  filename,
+  attachment,
+}) => {
+  const displayName = getDisplayName(userName);
+  const auth = getEmailCredentials();
+  if (isPlaceholderConfig(auth)) {
+    throw new Error('Email is not configured. Set EMAIL_USER and EMAIL_PASS in server/.env.');
+  }
+
+  const transporter = createTransporter();
+  await transporter.sendMail({
+    from: `"Adnate PayNest" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject: `${monthLabel} Transaction Statement — Adnate PayNest`,
+    text: `Dear ${displayName},\n\nYour Adnate PayNest transaction statement for ${monthLabel} is attached to this email.\n\nThank you for using Adnate PayNest.\n\nRegards,\nAdnate PayNest Team 🤝🏻`,
+    html: `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a0e27;border-radius:16px;overflow:hidden;border:1px solid rgba(56,189,248,0.3);">
+        <div style="padding:32px 24px;text-align:center;background:linear-gradient(135deg,#0a2e5c,#164e63);">
+          <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">Monthly Transaction Statement</h1>
+          <p style="margin:8px 0 0;color:#bae6fd;font-size:14px;">${monthLabel}</p>
+        </div>
+        <div style="padding:32px 24px;color:#e2e8f0;">
+          <p style="margin:0 0 16px;font-size:16px;">Dear <strong>${displayName}</strong>,</p>
+          <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#cbd5e1;">
+            Your Adnate PayNest transaction statement for ${monthLabel} is attached to this email as an Excel file.
+          </p>
+          <p style="margin:0;font-size:14px;line-height:1.7;color:#cbd5e1;">
+            Thank you for using Adnate PayNest.<br/><br/>
+            Regards,<br/><strong style="color:#fff;">Adnate PayNest Team &#129309;&#127995;</strong>
+          </p>
+        </div>
+      </div>
+    `,
+    attachments: [{
+      filename,
+      content: attachment,
+      contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }],
+  });
+};
+
+const formatOverdraftEmailCurrency = (amount) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 0,
+  }).format(Number(amount || 0));
+
+const sendOverdraftEmail = async ({ toEmail, subject, heading, intro, details, closing }) => {
+  const auth = getEmailCredentials();
+  if (isPlaceholderConfig(auth)) {
+    throw new Error('Email is not configured. Set EMAIL_USER and EMAIL_PASS in server/.env.');
+  }
+
+  const detailRows = details.map(({ label, value }) => `
+    <tr>
+      <td style="padding:8px 0;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase;">${label}</td>
+      <td style="padding:8px 0;color:#0f172a;font-size:14px;font-weight:700;text-align:right;">${value}</td>
+    </tr>
+  `).join('');
+
+  await createTransporter().sendMail({
+    from: `"Adnate PayNest" <${process.env.EMAIL_USER}>`,
+    to: toEmail,
+    subject,
+    text: [
+      'Hey PayNester Elite 🌟,',
+      '',
+      intro,
+      '',
+      ...details.map(({ label, value }) => `${label}: ${value}`),
+      '',
+      closing,
+      '',
+      'Thank you for banking with Adnate PayNest.',
+      '',
+      'Regards,',
+      'Adnate PayNest Team 🤝🏻',
+      'Your Trust, Our Secure Technology',
+    ].join('\n'),
+    html: `
+      <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a0e27;border-radius:16px;overflow:hidden;border:1px solid rgba(56,189,248,0.3);">
+        <div style="padding:32px 24px;text-align:center;background:linear-gradient(135deg,#0a2e5c,#164e63);">
+          <h1 style="margin:0;color:#fff;font-size:24px;font-weight:800;">${heading}</h1>
+          <p style="margin:8px 0 0;color:#bae6fd;font-size:14px;">Adnate PayNest</p>
+        </div>
+        <div style="padding:32px 24px;color:#e2e8f0;">
+          <p style="margin:0 0 18px;color:#fff;font-size:16px;font-weight:700;">Hey PayNester Elite &#127775;,</p>
+          <p style="margin:0 0 20px;color:#cbd5e1;font-size:14px;line-height:1.7;">${intro}</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+            ${detailRows}
+          </table>
+          <p style="margin:0 0 20px;color:#cbd5e1;font-size:14px;line-height:1.7;">${closing}</p>
+          <p style="margin:0;color:#cbd5e1;font-size:14px;line-height:1.7;">
+            Thank you for banking with Adnate PayNest.<br/><br/>
+            Regards,<br/>
+            <strong style="color:#fff;">Adnate PayNest Team &#129309;&#127995;</strong><br/>
+            Your Trust, Our Secure Technology
+          </p>
+        </div>
+      </div>
+    `,
+  });
+};
+
+const sendOverdraftUsedEmail = (data) => sendOverdraftEmail({
+  toEmail: data.toEmail,
+  subject: 'Overdraft Used Successfully — Adnate PayNest',
+  heading: 'Overdraft Used Successfully',
+  intro: 'Your overdraft request has been successfully processed, and the funds have been transferred.',
+  details: [
+    { label: 'Customer ID', value: data.customerId },
+    { label: 'Customer Name', value: getDisplayName(data.customerName) },
+    { label: 'Account Type', value: data.accountType },
+    { label: 'Overdraft Amount Used', value: formatOverdraftEmailCurrency(data.amountUsed) },
+    { label: 'Total Overdraft Used This Month', value: formatOverdraftEmailCurrency(data.totalUsedThisMonth) },
+    { label: 'Outstanding Overdraft', value: formatOverdraftEmailCurrency(data.outstandingAmount) },
+    { label: 'Overdraft Usage This Month', value: `${data.monthlyUsageCount} / 3` },
+    { label: 'Remaining Uses', value: String(Math.max(0, 3 - Number(data.monthlyUsageCount || 0))) },
+    { label: 'Transaction ID', value: data.transactionId || 'Not available' },
+    { label: 'Date & Time', value: data.dateTime },
+  ],
+  closing: 'Please remember that the overdraft amount should be repaid till the end of month to maintain uninterrupted overdraft eligibility.',
+});
+
+const sendAllOverdraftChancesUsedEmail = (data) => sendOverdraftEmail({
+  toEmail: data.toEmail,
+  subject: 'All 3 Monthly Overdraft Chances Used — Adnate PayNest',
+  heading: 'All 3 Monthly Overdraft Chances Used',
+  intro: 'This is to inform you that you have successfully utilized all three overdraft opportunities available for the current month.',
+  details: [
+    { label: 'Customer ID', value: data.customerId },
+    { label: 'Customer Name', value: getDisplayName(data.customerName) },
+    { label: 'Account Type', value: data.accountType },
+    { label: 'Total Overdraft Outstanding', value: formatOverdraftEmailCurrency(data.outstandingAmount) },
+    { label: 'Monthly Usage', value: '3 / 3' },
+    { label: 'Remaining Uses', value: '0' },
+  ],
+  closing: 'Your overdraft facility will remain unavailable until the outstanding overdraft amount has been fully repaid. Once your repayment is successfully completed, your overdraft eligibility will be restored according to Adnate PayNest policies.',
+});
+
+const sendMonthEndOverdraftReminderEmail = (data) => sendOverdraftEmail({
+  toEmail: data.toEmail,
+  subject: 'Month-End Overdraft Payment Reminder — Adnate PayNest',
+  heading: 'Month-End Overdraft Payment Reminder',
+  intro: 'Our records indicate that you have an outstanding overdraft balance that has not yet been repaid.',
+  details: [
+    { label: 'Customer ID', value: data.customerId },
+    { label: 'Customer Name', value: getDisplayName(data.customerName) },
+    { label: 'Outstanding Overdraft', value: formatOverdraftEmailCurrency(data.outstandingAmount) },
+    { label: 'Customer Classification', value: data.classification },
+    { label: 'Penalty Currently Applied', value: formatOverdraftEmailCurrency(data.currentPenalty) },
+    { label: 'Applicable Penalty Rule', value: `${formatOverdraftEmailCurrency(data.penaltyPerDay)} per overdue day` },
+    { label: 'Due Date', value: data.dueDate },
+  ],
+  closing: 'Please repay the outstanding overdraft amount immediately to avoid additional charges. You can repay it from Customer Dashboard → Overdraft → Repay Overdraft.',
+});
+
+const sendOverdraftPenaltyAppliedEmail = (data) => sendOverdraftEmail({
+  toEmail: data.toEmail,
+  subject: 'Penalty Applied for Overdraft Non-Payment — Adnate PayNest',
+  heading: 'Penalty Applied for Non-Payment',
+  intro: 'We regret to inform you that your overdraft repayment was not received before the due date. As per your customer classification, a penalty has now been applied.',
+  details: [
+    { label: 'Customer ID', value: data.customerId },
+    { label: 'Customer Name', value: getDisplayName(data.customerName) },
+    { label: 'Outstanding Overdraft', value: formatOverdraftEmailCurrency(data.outstandingAmount) },
+    { label: 'Customer Classification', value: data.classification },
+    { label: 'Penalty Charged', value: formatOverdraftEmailCurrency(data.penaltyAmount) },
+    { label: 'Penalty Rule', value: `${formatOverdraftEmailCurrency(data.penaltyPerDay)} per overdue day` },
+    { label: 'Total Amount Payable', value: formatOverdraftEmailCurrency(data.totalAmountPayable) },
+    { label: 'Penalty Applied On', value: data.appliedOn },
+  ],
+  closing: 'Please clear the outstanding amount along with the applicable penalty at the earliest to continue enjoying uninterrupted banking services and restore your overdraft eligibility. Repayment is available from Customer Dashboard → Overdraft → Repay Overdraft.',
+});
+
+const sendLoanApprovedEmail = async (toEmail, data) => {
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: `Loan Application Approved — ${data.loanNumber}`,
+    text: `Hey PayNest Elite 🌟,\n\nWe are pleased to inform you that your loan application has been approved and disbursed.\n\nLoan Number: ${data.loanNumber}\nLoan Type: ${data.loanType}\nApproved Amount: ${formatCurrency(data.approvedAmount)}\nInterest Rate: ${data.interestRate}% p.a.\nTenure: ${data.tenure} Months\nMonthly EMI: ${formatCurrency(data.monthlyEMI)}\nTotal Repayment: ${formatCurrency(data.totalRepayment)}\nFirst EMI Date: ${data.firstEMIDate}\nAccount: ${data.accountNumber}\n\nThank you for choosing Adnate PayNest.\n\nRegards,\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: 'Loan Application Approved',
+      intro: 'We are pleased to inform you that your loan application has been approved and the funds have been successfully disbursed.',
+      details: [
+        { label: 'Loan Number', value: data.loanNumber },
+        { label: 'Loan Type', value: data.loanType },
+        { label: 'Approved Amount', value: formatCurrency(data.approvedAmount) },
+        { label: 'Interest Rate', value: `${data.interestRate}% p.a.` },
+        { label: 'Tenure', value: `${data.tenure} Months` },
+        { label: 'Monthly EMI', value: formatCurrency(data.monthlyEMI) },
+        { label: 'Total Repayment', value: formatCurrency(data.totalRepayment) },
+        { label: 'First EMI Due Date', value: data.firstEMIDate },
+        { label: 'Disbursed To Account', value: data.accountNumber },
+      ],
+      message: 'The approved amount has been credited to your linked account. Your monthly EMIs will be automatically deducted starting from the first due date.',
+    }),
+  });
+};
+
+const sendLoanRejectedEmail = async (toEmail, data) => {
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: `Loan Application Rejected — ${data.loanNumber}`,
+    text: `Hey PayNest Elite 🌟,\n\nWe regret to inform you that your loan application has been rejected.\n\nLoan Number: ${data.loanNumber}\nLoan Type: ${data.loanType}\nRequested Amount: ${formatCurrency(data.amount)}\nReason: ${data.reason}\n\nIf you have any questions, please contact support.\n\nRegards,\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: 'Loan Application Rejected',
+      intro: 'We regret to inform you that after careful review, your loan application has been rejected.',
+      details: [
+        { label: 'Loan Number', value: data.loanNumber },
+        { label: 'Loan Type', value: data.loanType },
+        { label: 'Requested Amount', value: formatCurrency(data.amount) },
+        { label: 'Rejection Reason', value: data.reason },
+      ],
+      message: 'If you have any questions or would like to discuss this decision, please contact your account manager.',
+    }),
+  });
+};
+
+const sendLoanApplicationStatusEmail = async (toEmail, data) => {
+  const details = (data.details || []).map(([label, value]) => ({ label, value }));
+  const displayName = getDisplayName(data.customerName);
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: `${data.heading} — Adnate PayNest`,
+    text: `Dear ${displayName},\n\n${data.message}\n\n${details.map((item) => `${item.label}: ${item.value}`).join('\n')}\n\nRegards,\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: data.heading,
+      intro: data.message,
+      details,
+      message: 'You can track this application from Customer Dashboard → Loans & EMI.',
+    }),
+  });
+};
+
+const sendLoanDisbursedEmail = async (toEmail, data) => {
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: `Loan Funds Disbursed — ${data.loanNumber}`,
+    text: `Hey PayNest Elite 🌟,\n\nYour loan funds have been successfully disbursed to your account.\n\nLoan Number: ${data.loanNumber}\nDisbursed Amount: ${formatCurrency(data.amount)}\nLinked Account: ${data.accountNumber}\n\nRegards,\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: 'Loan Funds Disbursed',
+      intro: 'The funds for your approved loan have been successfully disbursed to your linked account.',
+      details: [
+        { label: 'Loan Number', value: data.loanNumber },
+        { label: 'Disbursed Amount', value: formatCurrency(data.amount) },
+        { label: 'Linked Account', value: data.accountNumber },
+        { label: 'Disbursement Date', value: formatEmailDate(new Date()) },
+      ],
+      message: 'You can now use the funds for your business or personal needs. Thank you for choosing Adnate PayNest.',
+    }),
+  });
+};
+
+const sendEMIDeductedEmail = async (toEmail, data) => {
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: `EMI Deduction Successful — Loan ${data.loanNumber}`,
+    text: `Hey PayNest Elite 🌟,\n\nYour monthly EMI has been successfully deducted.\n\nLoan Number: ${data.loanNumber}\nEMI Number: ${data.emiNumber} / ${data.totalEMIs}\nEMI Amount: ${formatCurrency(data.emiAmount)}\nAccount: ${data.accountNumber}\nReference: ${data.transactionRef}\n\nRegards,\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: 'EMI Deduction Successful',
+      intro: 'This is a receipt for your monthly loan EMI deduction.',
+      details: [
+        { label: 'Loan Number', value: data.loanNumber },
+        { label: 'EMI Number', value: `${data.emiNumber} / ${data.totalEMIs}` },
+        { label: 'Amount Deducted', value: formatCurrency(data.emiAmount) },
+        { label: 'Deducted From Account', value: data.accountNumber },
+        { label: 'Transaction Reference', value: data.transactionRef },
+        { label: 'Deduction Date', value: formatEmailDate(new Date()) },
+      ],
+      message: 'Your payment has been successfully recorded. Thank you for your timely repayment.',
+    }),
+  });
+};
+
+const sendEMIPaymentSuccessEmail = async (toEmail, data) => {
+  const paymentDate = data.paymentDate || formatEmailDate(new Date());
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: 'EMI Payment Successful - Adnate PayNest',
+    text: `Hey PayNester Elite 🌟,
+
+Your EMI payment has been successfully processed.
+
+EMI Payment Details:
+
+EMI No: ${data.emiNumber}
+Due Date: ${data.dueDate}
+Principal Paid: ${formatCurrency(data.principalPaid)}
+Interest Paid: ${formatCurrency(data.interestPaid)}
+EMI Amount: ${formatCurrency(data.emiAmount)}
+Outstanding Balance: ${formatCurrency(data.outstandingBalance)}
+Payment Status: Paid
+Payment Date: ${paymentDate}
+
+Thank you for banking with Adnate PayNest.
+
+Regards,
+Adnate PayNest Team 🤝🏻
+Your Trust, Our Secure Technology`,
+    html: buildPremiumBankingEmail({
+      heading: 'EMI Payment Successful',
+      intro: 'Your EMI payment has been successfully processed.',
+      details: [
+        { label: 'EMI No', value: data.emiNumber },
+        { label: 'Due Date', value: data.dueDate },
+        { label: 'Principal Paid', value: formatCurrency(data.principalPaid) },
+        { label: 'Interest Paid', value: formatCurrency(data.interestPaid) },
+        { label: 'EMI Amount', value: formatCurrency(data.emiAmount) },
+        { label: 'Outstanding Balance', value: formatCurrency(data.outstandingBalance) },
+        { label: 'Payment Status', value: 'Paid' },
+        { label: 'Payment Date', value: paymentDate },
+      ],
+      message: 'Thank you for banking with Adnate PayNest. Your Trust, Our Secure Technology.',
+    }),
+  });
+};
+
+const sendEMIPaymentFailedEmail = async (toEmail, data) => {
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: 'EMI Payment Failed - Adnate PayNest',
+    text: `Hey PayNester Elite 🌟,
+
+We could not process your EMI payment.
+
+EMI No: ${data.emiNumber}
+Due Date: ${data.dueDate}
+EMI Amount: ${formatCurrency(data.emiAmount)}
+Reason: ${data.reason}
+Payment Status: Failed
+
+Please add sufficient funds to your repayment account and try again.
+
+Regards,
+Adnate PayNest Team 🤝🏻
+Your Trust, Our Secure Technology`,
+    html: buildPremiumBankingEmail({
+      heading: 'EMI Payment Failed',
+      intro: 'We could not process your EMI payment.',
+      details: [
+        { label: 'EMI No', value: data.emiNumber },
+        { label: 'Due Date', value: data.dueDate },
+        { label: 'EMI Amount', value: formatCurrency(data.emiAmount) },
+        { label: 'Reason', value: data.reason },
+        { label: 'Payment Status', value: 'Failed' },
+      ],
+      message: 'Please add sufficient funds to your repayment account and try again.',
+    }),
+  });
+};
+
+const sendEMIMissedEmail = async (toEmail, data) => {
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: `⚠️ Urgent: EMI Payment Missed — Loan ${data.loanNumber}`,
+    text: `Hey PayNest Elite 🌟,\n\nWe were unable to deduct your loan EMI due to insufficient balance.\n\nLoan Number: ${data.loanNumber}\nEMI Number: ${data.emiNumber}\nEMI Amount: ${formatCurrency(data.emiAmount)}\nPenalty Applied: ${formatCurrency(data.penalty)}\nOutstanding: ${formatCurrency(data.outstandingBalance)}\nDue Date: ${data.dueDate}\n\nPlease add funds to avoid additional penalties.\n\nRegards,\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: 'Loan EMI Missed',
+      intro: 'We were unable to deduct your monthly loan EMI due to insufficient balance in your linked account.',
+      details: [
+        { label: 'Loan Number', value: data.loanNumber },
+        { label: 'EMI Number', value: data.emiNumber },
+        { label: 'EMI Amount', value: formatCurrency(data.emiAmount) },
+        { label: 'Late Payment Penalty', value: formatCurrency(data.penalty) },
+        { label: 'Outstanding Balance', value: formatCurrency(data.outstandingBalance) },
+        { label: 'Scheduled Due Date', value: data.dueDate },
+      ],
+      message: 'A penalty has been applied as per your loan agreement. Please add sufficient funds to your linked account to clear the outstanding amount immediately.',
+    }),
+  });
+};
+
+const sendLoanClosedEmail = async (toEmail, data) => {
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: `Loan Closed Successfully — ${data.loanNumber}`,
+    text: `Hey PayNest Elite 🌟,\n\nCongratulations! Your loan has been fully repaid and officially closed.\n\nLoan Number: ${data.loanNumber}\nLoan Type: ${data.loanType}\nTotal Repaid: ${formatCurrency(data.totalRepaid)}\nClosure Date: ${formatEmailDate(new Date())}\n\nRegards,\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: 'Loan Closed Successfully',
+      intro: 'Congratulations! Your loan has been fully repaid and officially closed.',
+      details: [
+        { label: 'Loan Number', value: data.loanNumber },
+        { label: 'Loan Type', value: data.loanType },
+        { label: 'Total Repaid', value: formatCurrency(data.totalRepaid) },
+        { label: 'Closure Date', value: formatEmailDate(new Date()) },
+      ],
+      message: 'We appreciate your prompt repayments throughout the tenure. A No Objection Certificate (NOC) and final statement will be sent to you shortly.',
+    }),
+  });
+};
+
+const sendInvestmentEmail = async (toEmail, data) => {
+  const details = Array.isArray(data.details)
+    ? data.details.map(([label, value]) => ({ label, value }))
+    : [];
+  return sendAutomaticBankingEmail({
+    to: toEmail,
+    subject: data.subject || 'Adnate PayNest Investment Update',
+    text: `${data.heading || 'Investment Update'}\n\n${details.map((item) => `${item.label}: ${item.value}`).join('\n')}\n\n${data.message || ''}\n\nAdnate PayNest Team`,
+    html: buildPremiumBankingEmail({
+      heading: data.heading || 'Investment Update',
+      intro: 'Here is the latest update for your Adnate PayNest investment product.',
+      details,
+      message: data.message || 'Please log in to your dashboard for more details.',
+    }),
+  });
 };
 
 module.exports = { 
+  verifyEmailTransporter,
   generateTempPassword, 
   sendTempPasswordEmail, 
   sendPasswordResetEmail,
@@ -1251,4 +1782,19 @@ module.exports = {
   sendTransferLimitApprovedEmail,
   sendAccountTypeApprovedEmail,
   sendClassificationLimitsUpdatedEmail,
+  sendMonthlyTransactionStatementEmail,
+  sendOverdraftUsedEmail,
+  sendAllOverdraftChancesUsedEmail,
+  sendMonthEndOverdraftReminderEmail,
+  sendOverdraftPenaltyAppliedEmail,
+  sendLoanApprovedEmail,
+  sendLoanRejectedEmail,
+  sendLoanApplicationStatusEmail,
+  sendLoanDisbursedEmail,
+  sendEMIDeductedEmail,
+  sendEMIPaymentSuccessEmail,
+  sendEMIPaymentFailedEmail,
+  sendEMIMissedEmail,
+  sendLoanClosedEmail,
+  sendInvestmentEmail,
 };

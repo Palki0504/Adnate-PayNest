@@ -5,6 +5,7 @@ import {
   CircularProgress, FormControl, Select, Grid,
 } from '@mui/material';
 import { CheckCircle, Error, Info, Notifications, Send } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { managerAPI, notificationAPI } from '../../services/api';
 import TablePaginationControls from '../../components/common/TablePaginationControls';
 import useTablePagination from '../../hooks/useTablePagination';
@@ -17,6 +18,7 @@ const typeConfig = {
 };
 
 const ManagerNotifications = () => {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
@@ -68,6 +70,11 @@ const ManagerNotifications = () => {
       await notificationAPI.markAsRead(id);
       setNotifications((prev) => prev.map((n) => n._id === id ? { ...n, isRead: true } : n));
     } catch (_) {}
+  };
+
+  const handleNotificationClick = async (notification) => {
+    if (!notification.isRead) await markRead(notification._id);
+    if (notification.link) navigate(notification.link);
   };
 
   const openCompose = () => {
@@ -181,9 +188,9 @@ const ManagerNotifications = () => {
         return (
           <Card
             key={n._id}
-            onClick={() => !n.isRead && markRead(n._id)}
+            onClick={() => handleNotificationClick(n)}
             sx={{
-              mb: 1.5, cursor: !n.isRead ? 'pointer' : 'default',
+              mb: 1.5, cursor: n.link || !n.isRead ? 'pointer' : 'default',
               background: n.isRead ? 'rgba(255,255,255,0.02)' : cfg.bg,
               border: `1px solid ${n.isRead ? 'rgba(255,255,255,0.06)' : cfg.bg.replace('0.12', '0.3')}`,
               borderRadius: '14px',

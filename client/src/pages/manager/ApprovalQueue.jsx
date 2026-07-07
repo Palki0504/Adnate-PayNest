@@ -55,14 +55,14 @@ const getLimitValues = (request) => {
 };
 
 const statusSx = (status) => {
-  if (status === 'Approved' || status === 'approved') return { bgcolor: 'rgba(34,197,94,0.12)', color: '#86efac' };
-  if (status === 'Rejected' || status === 'rejected') return { bgcolor: 'rgba(239,68,68,0.12)', color: '#fca5a5' };
-  return { bgcolor: 'rgba(245,158,11,0.12)', color: '#fbbf24' };
+  if (status === 'Approved' || status === 'approved') return { bgcolor: '#dcfce7', color: '#15803d', border: '1px solid #86efac' };
+  if (status === 'Rejected' || status === 'rejected') return { bgcolor: '#fee2e2', color: '#dc2626', border: '1px solid #fca5a5' };
+  return { bgcolor: '#ffedd5', color: '#c2410c', border: '1px solid #fdba74' };
 };
 
 const MonthFilter = ({ value, onChange, options, ariaLabel }) => (
-  <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', px: 2.5, py: 1.5, borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-    <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: '0.75rem', fontWeight: 600, mr: 1 }}>
+  <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', px: 2.5, py: 1.5, borderBottom: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+    <Typography sx={{ color: '#475569', fontSize: '0.75rem', fontWeight: 800, mr: 1 }}>
       Month
     </Typography>
     <FormControl size="small">
@@ -74,17 +74,17 @@ const MonthFilter = ({ value, onChange, options, ariaLabel }) => (
         sx={{
           minWidth: 170,
           height: 34,
-          color: '#fff',
-          bgcolor: 'rgba(255,255,255,0.04)',
+          color: '#0f172a',
+          bgcolor: '#f8fafc',
           borderRadius: '9px',
           fontSize: '0.76rem',
-          fontWeight: 600,
-          '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.12)' },
-          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(245,158,11,0.45)' },
-          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#f59e0b' },
-          '& .MuiSelect-icon': { color: '#f59e0b', right: 8 },
+          fontWeight: 800,
+          '& .MuiOutlinedInput-notchedOutline': { borderColor: '#cbd5e1' },
+          '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#93c5fd' },
+          '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#2563eb' },
+          '& .MuiSelect-icon': { color: '#2563eb', right: 8 },
         }}
-        MenuProps={{ PaperProps: { sx: { bgcolor: '#161832', color: '#fff', border: '1px solid rgba(255,255,255,0.1)' } } }}
+        MenuProps={{ PaperProps: { sx: { bgcolor: '#fff', color: '#0f172a', border: '1px solid #e2e8f0' } } }}
       >
         <MenuItem value="all">All months</MenuItem>
         {options.map((monthKey) => (
@@ -309,11 +309,43 @@ const ApprovalQueue = () => {
       color: '#111827', borderRadius: '8px', background: '#FFFFFF',
       '& fieldset': { borderColor: '#D1D5DB' },
       '&:hover fieldset': { borderColor: '#9CA3AF' },
-      '&.Mui-focused fieldset': { borderColor: '#f59e0b' },
+      '&.Mui-focused fieldset': { borderColor: '#2563eb' },
     },
     '& .MuiInputLabel-root': { color: '#6B7280' },
-    '& .MuiInputLabel-root.Mui-focused': { color: '#f59e0b' },
+    '& .MuiInputLabel-root.Mui-focused': { color: '#2563eb' },
     '& .MuiFormHelperText-root': { color: '#ef4444' },
+  };
+
+  const tableCardSx = {
+    bgcolor: '#fff',
+    border: '1px solid #dbe3ef',
+    borderRadius: '18px',
+    boxShadow: '0 18px 42px rgba(2,12,36,.16)',
+    overflow: 'hidden',
+    '& .MuiTableHead-root .MuiTableCell-root': {
+      bgcolor: '#eff6ff !important',
+      color: '#0B1F4D !important',
+      borderColor: '#dbeafe !important',
+      fontSize: '0.73rem',
+      fontWeight: 900,
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+    },
+    '& .MuiTableBody-root .MuiTableCell-root': {
+      bgcolor: '#fff !important',
+      color: '#334155 !important',
+      borderColor: '#e2e8f0 !important',
+      fontSize: '0.8rem',
+    },
+    '& .MuiTableBody-root .MuiTypography-root': {
+      color: '#334155 !important',
+    },
+    '& .MuiTableBody-root .MuiChip-root': {
+      fontWeight: 800,
+    },
+    '& .MuiTableRow-root:hover .MuiTableCell-root': {
+      bgcolor: '#eff6ff !important',
+    },
   };
 
   const actionButtons = (onApprove, onReject) => (
@@ -322,7 +354,7 @@ const ApprovalQueue = () => {
         size="small"
         startIcon={<CheckCircle sx={{ fontSize: '0.9rem !important' }} />}
         onClick={onApprove}
-        sx={{ color: '#22c55e', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '8px', textTransform: 'none', fontSize: '0.78rem', fontWeight: 600, px: 1.5, '&:hover': { bgcolor: 'rgba(34,197,94,0.1)' } }}
+        sx={{ color: '#15803d', bgcolor: '#dcfce7', border: '1px solid #86efac', borderRadius: '9px', textTransform: 'none', fontSize: '0.78rem', fontWeight: 800, px: 1.5, '&:hover': { bgcolor: '#bbf7d0' } }}
       >
         Approve
       </Button>
@@ -330,7 +362,7 @@ const ApprovalQueue = () => {
         size="small"
         startIcon={<Cancel sx={{ fontSize: '0.9rem !important' }} />}
         onClick={onReject}
-        sx={{ color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', textTransform: 'none', fontSize: '0.78rem', fontWeight: 600, px: 1.5, '&:hover': { bgcolor: 'rgba(239,68,68,0.1)' } }}
+        sx={{ color: '#dc2626', bgcolor: '#fee2e2', border: '1px solid #fca5a5', borderRadius: '9px', textTransform: 'none', fontSize: '0.78rem', fontWeight: 800, px: 1.5, '&:hover': { bgcolor: '#fecaca' } }}
       >
         Reject
       </Button>
@@ -341,8 +373,8 @@ const ApprovalQueue = () => {
     [...Array(5)].map((_, i) => (
       <TableRow key={i}>
         {[...Array(colSpan)].map((__, j) => (
-          <TableCell key={j} sx={{ borderColor: 'rgba(255,255,255,0.05)' }}>
-            <Skeleton height={20} sx={{ bgcolor: 'rgba(255,255,255,0.06)' }} />
+          <TableCell key={j} sx={{ borderColor: '#e2e8f0' }}>
+            <Skeleton height={20} sx={{ bgcolor: '#e2e8f0' }} />
           </TableCell>
         ))}
       </TableRow>
@@ -351,12 +383,12 @@ const ApprovalQueue = () => {
 
   const renderCustomerCell = (userData) => (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-      <Avatar sx={{ width: 32, height: 32, background: 'rgba(245,158,11,0.2)', border: '1px solid rgba(245,158,11,0.3)', fontSize: '0.8rem', fontWeight: 700, color: '#f59e0b' }}>
+      <Avatar sx={{ width: 32, height: 32, background: '#dbeafe', border: '1px solid #93c5fd', fontSize: '0.8rem', fontWeight: 800, color: '#1d4ed8' }}>
         {userData?.name?.charAt(0)?.toUpperCase()}
       </Avatar>
       <Box>
-        <Typography sx={{ color: '#fff', fontSize: '0.82rem', fontWeight: 600 }}>{userData?.name}</Typography>
-        <Typography sx={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.7rem' }}>{userData?.customerId || userData?.email}</Typography>
+        <Typography sx={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 800 }}>{userData?.name}</Typography>
+        <Typography sx={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 600 }}>{userData?.customerId || userData?.email}</Typography>
       </Box>
     </Box>
   );
@@ -371,7 +403,7 @@ const ApprovalQueue = () => {
           </Typography>
         </Box>
         <Tooltip title="Refresh">
-          <IconButton onClick={refreshActiveTab} sx={{ color: 'rgba(255,255,255,0.5)', '&:hover': { color: '#f59e0b' } }}>
+          <IconButton onClick={refreshActiveTab} sx={{ color: '#bfdbfe', border: '1px solid rgba(191,219,254,.25)', bgcolor: 'rgba(255,255,255,.05)', '&:hover': { color: '#fff', bgcolor: '#2563eb' } }}>
             <Refresh />
           </IconButton>
         </Tooltip>
@@ -392,16 +424,17 @@ const ApprovalQueue = () => {
         </Alert>
       )}
 
-      <Card sx={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px' }}>
+      <Card sx={tableCardSx}>
         <Tabs
           value={activeTab}
           onChange={(_, value) => setActiveTab(value)}
           sx={{
             px: 2,
-            borderBottom: '1px solid rgba(255,255,255,0.08)',
-            '& .MuiTab-root': { color: 'rgba(255,255,255,0.45)', textTransform: 'none', fontWeight: 700 },
-            '& .Mui-selected': { color: '#f59e0b !important' },
-            '& .MuiTabs-indicator': { backgroundColor: '#f59e0b' },
+            bgcolor: '#fff',
+            borderBottom: '1px solid #e2e8f0',
+            '& .MuiTab-root': { color: '#64748b', textTransform: 'none', fontWeight: 900, minHeight: 58 },
+            '& .Mui-selected': { color: '#1d4ed8 !important' },
+            '& .MuiTabs-indicator': { backgroundColor: '#2563eb', height: 3 },
           }}
         >
           <Tab label={`Increase Transfer Limit Requests (${filteredLimitRequests.length})`} />

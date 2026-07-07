@@ -24,6 +24,8 @@
     "react-hook-form": "^7.76.0",
     "react-redux": "^9.3.0",
     "react-router-dom": "^7.15.1",
+    "jspdf": "^2.5.1",
+    "jspdf-autotable": "^3.8.2",
     "recharts": "^3.8.1",
     "yup": "^1.7.1"
   }

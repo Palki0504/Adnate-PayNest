@@ -375,9 +375,6 @@ const AccountCard = ({ account, onIncreaseLimit }) => {
                 },
               }}
             />
-            <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.75rem', mt: 1 }}>
-              Available including overdraft: {formatCurrency(account.availableBalance ?? (account.balance + Math.max(0, account.overdraftLimit - account.overdraftUsed)))}
-            </Typography>
             {account.monthlyOverdraftCount !== undefined && (
               <Box sx={{ mt: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <Typography sx={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.72rem' }}>
