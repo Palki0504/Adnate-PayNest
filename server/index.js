@@ -89,8 +89,7 @@ app.use(errorHandler);
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 5000;
-databaseReady.then(async () => {
-  await verifyEmailTransporter();
+databaseReady.then(() => {
   app.listen(PORT, () => {
   console.log('');
   console.log('  🏦 Adnate PayNest API Server');
@@ -101,6 +100,10 @@ databaseReady.then(async () => {
   console.log(`  🔗 Allowed origins: ${allowedOrigins.join(', ') || 'none configured'}`);
   console.log('  ─────────────────────────────────────');
   console.log('');
+  });
+
+  verifyEmailTransporter().catch((error) => {
+    console.error(`[EMAIL VERIFY FAILED] ${error.message || error}`);
   });
 });
 
