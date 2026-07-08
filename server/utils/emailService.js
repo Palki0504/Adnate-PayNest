@@ -227,13 +227,22 @@ const createTransporter = () => {
 
   const service = getEmailService();
   const transporter = service === 'gmail'
-    ? nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: auth.user,
-        pass: auth.pass,
-      },
-    })
+    ? (() => {
+      const port = parseInt(process.env.EMAIL_PORT, 10) || 465;
+      return nodemailer.createTransport({
+        host: process.env.EMAIL_HOST?.trim() || 'smtp.gmail.com',
+        port,
+        secure: port === 465,
+        family: 4,
+        connectionTimeout: 20000,
+        greetingTimeout: 20000,
+        socketTimeout: 30000,
+        auth: {
+          user: auth.user,
+          pass: auth.pass,
+        },
+      });
+    })()
     : (() => {
       const host = process.env.EMAIL_HOST?.trim();
       const port = parseInt(process.env.EMAIL_PORT, 10) || 587;
