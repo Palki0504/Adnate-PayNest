@@ -31,7 +31,6 @@ import {
   AccountBalance,
   Notifications,
   Security,
-  Rule,
   Logout,
   Menu as MenuIcon,
   KeyboardArrowDown,
@@ -56,7 +55,6 @@ import TransactionsPage from './Transactions';
 import NotificationsAdmin from './NotificationsAdmin';
 import OverdraftManagement from './OverdraftManagement';
 import LogsAndSecurity from './LogsAndSecurity';
-import BusinessRules from './BusinessRules';
 import AdminSettings from './AdminSettings';
 import AdminLoanManagement from './AdminLoanManagement';
 import AdminInvestments from './AdminInvestments';
@@ -91,7 +89,6 @@ const navItems = [
   },
   { label: 'Notifications', icon: <Notifications />, path: 'notifications' },
   { label: 'Logs & Security', icon: <Security />, path: 'logs-security' },
-  { label: 'Business Rules', icon: <Rule />, path: 'business-rules' },
 ];
 
 const ComingSoonPage = ({ label }) => (
@@ -451,7 +448,6 @@ const AdminDashboard = () => {
             <Route path="loans/emis" element={<AdminLoanManagement section="emis" />} />
             <Route path="notifications" element={<NotificationsAdmin />} />
             <Route path="logs-security" element={<LogsAndSecurity />} />
-            <Route path="business-rules" element={<BusinessRules />} />
             <Route path="settings" element={<AdminSettings />} />
             <Route path="profile" element={<AdminProfile />} />
             <Route path="*" element={<AdminHome />} />
