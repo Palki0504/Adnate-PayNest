@@ -60,6 +60,11 @@ import AdminLoanManagement from './AdminLoanManagement';
 import AdminInvestments from './AdminInvestments';
 
 const DRAWER_WIDTH = 280;
+const sidebarNavy = '#0B1F4D';
+const sidebarNavySoft = '#102A63';
+const sidebarHover = 'linear-gradient(135deg, rgba(22,135,255,0.18), rgba(11,31,77,0.96))';
+const sidebarActive = 'linear-gradient(135deg, rgba(96,165,250,0.24), rgba(11,31,77,0.98))';
+const sidebarBorder = 'rgba(147,197,253,0.22)';
 
 const navItems = [
   { label: 'Dashboard', icon: <Home />, path: '' },
@@ -160,7 +165,7 @@ const AdminDashboard = () => {
   };
 
   const DrawerContent = () => (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'linear-gradient(180deg, #0B1F4D 0%, #102A63 100%)' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', background: sidebarNavy }}>
       <Box sx={{ p: 3, pb: 2.5 }}>
         <PayNestLogo size="small" />
       </Box>
@@ -190,25 +195,23 @@ const AdminDashboard = () => {
                   sx={{
                     borderRadius: isParentMenu ? '12px' : '10px',
                     py: isParentMenu ? 1.25 : 1.2,
-                    background: isParentMenu && isActive
-                      ? 'linear-gradient(135deg, rgba(30,64,175,0.46), rgba(19,44,102,0.86))'
-                      : isActive ? 'rgba(56,189,248,0.12)' : 'transparent',
-                    border: isParentMenu && isActive
-                      ? '1px solid rgba(96,165,250,0.38)'
-                      : isActive ? '1px solid rgba(56,189,248,0.24)' : '1px solid transparent',
-                    boxShadow: isParentMenu && isActive ? '0 10px 24px rgba(37,99,235,0.18)' : 'none',
+                    background: isActive ? sidebarActive : sidebarNavy,
+                    border: `1px solid ${isActive ? 'rgba(147,197,253,0.38)' : 'rgba(147,197,253,0.10)'}`,
+                    boxShadow: isActive ? '0 10px 24px rgba(37,99,235,0.20), inset 0 1px 0 rgba(255,255,255,0.08)' : 'none',
                     transition: 'all .3s ease',
                     '&:hover': {
-                      background: isParentMenu ? '#1A3A7A' : 'rgba(255,255,255,0.06)',
-                      transform: isParentMenu ? 'translateX(2px)' : 'none',
+                      background: sidebarHover,
+                      borderColor: sidebarBorder,
+                      boxShadow: '0 10px 24px rgba(37,99,235,0.18), inset 0 1px 0 rgba(255,255,255,0.08)',
+                      transform: 'translateX(2px)',
                     },
                   }}
                 >
                   <ListItemIcon sx={{
                     minWidth: 36,
-                    color: isParentMenu ? '#60A5FA' : isActive ? '#38bdf8' : 'rgba(255,255,255,0.6)',
+                    color: isActive ? '#7DD3FC' : 'rgba(255,255,255,0.68)',
                     '& svg': {
-                      filter: isParentMenu ? 'drop-shadow(0 3px 8px rgba(96,165,250,.35))' : 'none',
+                      filter: isActive ? 'drop-shadow(0 3px 8px rgba(96,165,250,.35))' : 'none',
                     },
                   }}>
                     {item.label === 'Notifications' ? (
@@ -242,7 +245,7 @@ const AdminDashboard = () => {
                       ml: 1,
                       mr: 0.2,
                       p: 1.1,
-                      bgcolor: '#132C66',
+                      bgcolor: sidebarNavySoft,
                       borderRadius: '14px',
                       borderLeft: '3px solid rgba(96,165,250,0.75)',
                       boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06), 0 12px 24px rgba(2,12,36,0.18)',
@@ -265,8 +268,8 @@ const AdminDashboard = () => {
                               px: 1.45,
                               py: 1.35,
                               pl: childActive ? 1.75 : 1.45,
-                              bgcolor: childActive ? 'rgba(59,130,246,0.18)' : 'rgba(255,255,255,0.045)',
-                              border: childActive ? '1px solid rgba(96,165,250,0.32)' : '1px solid rgba(255,255,255,0.055)',
+                              bgcolor: childActive ? 'rgba(96,165,250,0.18)' : sidebarNavy,
+                              border: childActive ? '1px solid rgba(147,197,253,0.34)' : '1px solid rgba(147,197,253,0.10)',
                               boxShadow: childActive ? '0 8px 20px rgba(59,130,246,0.22)' : 'none',
                               transition: 'all .3s ease',
                               overflow: 'hidden',
@@ -282,9 +285,10 @@ const AdminDashboard = () => {
                                 transition: 'width .25s ease',
                               },
                               '&:hover': {
-                                bgcolor: childActive ? 'rgba(59,130,246,0.22)' : '#1A3A7A',
+                                background: sidebarHover,
                                 transform: 'translateX(4px)',
-                                borderColor: 'rgba(96,165,250,0.34)',
+                                borderColor: sidebarBorder,
+                                boxShadow: '0 8px 18px rgba(37,99,235,0.18), inset 0 1px 0 rgba(255,255,255,0.08)',
                               },
                               '&:hover .loan-sub-icon': {
                                 color: '#7DD3FC',
