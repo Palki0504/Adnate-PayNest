@@ -2,6 +2,7 @@ const Account = require('../models/Account');
 const User = require('../models/User');
 const { FIXED_ACCOUNT_BALANCES } = require('../models/Account');
 const { body } = require('express-validator');
+const { getActiveAccountsForUser } = require('../utils/accountRecovery');
 
 const MAX_ACCOUNTS_PER_USER = 3;
 
@@ -14,7 +15,7 @@ const createAccountValidation = [
 // ─── @desc    Get all accounts for the authenticated user
 const getMyAccounts = async (req, res, next) => {
   try {
-    const accounts = await Account.find({ userId: req.user._id, status: 'active' }).sort({ createdAt: 1 });
+    const accounts = await getActiveAccountsForUser(req.user);
 
     const totalBalance = accounts.reduce((sum, acc) => sum + acc.balance, 0);
     const totalOverdraftUsed = accounts.reduce((sum, acc) => sum + acc.overdraftUsed, 0);

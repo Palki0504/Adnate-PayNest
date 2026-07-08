@@ -6,6 +6,7 @@ const RecurringDeposit = require('../models/RecurringDeposit');
 const Transaction = require('../models/Transaction');
 const Notification = require('../models/Notification');
 const { ensureEMISchedule } = require('./loanController');
+const { getActiveAccountsForUser } = require('../utils/accountRecovery');
 
 const activeLoanStatuses = ['Approved', 'Disbursed'];
 const activeInvestmentStatuses = ['Active'];
@@ -27,7 +28,7 @@ const getCustomerDashboard = async (req, res, next) => {
     const userId = req.user._id;
     const { start, end, month, year } = monthRange();
 
-    const accounts = await Account.find({ userId, status: 'active' }).sort({ createdAt: 1 }).lean();
+    const accounts = (await getActiveAccountsForUser(req.user)).map((account) => account.toObject());
     const accountIds = accounts.map((account) => account._id);
 
     const [loans, fixedDeposits, recurringDeposits, transactions, notifications, unreadCount] = await Promise.all([
