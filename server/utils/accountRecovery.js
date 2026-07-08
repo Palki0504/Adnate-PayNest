@@ -73,6 +73,32 @@ const recoverAccountsFromUserSnapshot = async (user) => {
   return recovered.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 };
 
+const recoverPrimaryAccountForUser = async (user) => {
+  const accountType = String(user?.primaryAccountType || '').toLowerCase();
+  if (!['savings', 'salary', 'current'].includes(accountType)) return [];
+
+  const existing = await Account.findOne({ userId: user._id, accountType });
+  if (existing) {
+    existing.customerId = user.customerId || existing.customerId;
+    existing.status = existing.status || 'active';
+    existing.classification = user.classification || existing.classification;
+    if (!existing.balance && FIXED_ACCOUNT_BALANCES[accountType] !== undefined) {
+      existing.balance = FIXED_ACCOUNT_BALANCES[accountType];
+    }
+    await existing.save();
+    return existing.status === 'active' ? [existing] : [];
+  }
+
+  return [await Account.create({
+    userId: user._id,
+    customerId: user.customerId,
+    accountType,
+    balance: FIXED_ACCOUNT_BALANCES[accountType] ?? 0,
+    status: 'active',
+    classification: user.classification || 'PENDING',
+  })];
+};
+
 const getActiveAccountsForUser = async (user) => {
   const userId = user?._id;
   if (!userId) return [];
@@ -95,7 +121,10 @@ const getActiveAccountsForUser = async (user) => {
     }
   }
 
-  return recoverAccountsFromUserSnapshot(user);
+  const recoveredFromSnapshot = await recoverAccountsFromUserSnapshot(user);
+  if (recoveredFromSnapshot.length) return recoveredFromSnapshot;
+
+  return recoverPrimaryAccountForUser(user);
 };
 
 module.exports = {
