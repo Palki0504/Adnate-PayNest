@@ -52,6 +52,7 @@ const cardGradients = [
 ];
 
 const iconPalette = ['#0ea5e9', '#16a34a', '#f97316', '#6366f1', '#db2777', '#0891b2', '#ca8a04'];
+const KYC_APPROVED_CARD_VISIBLE_MS = 10 * 60 * 1000;
 
 const KpiCard = ({ title, value, subtitle, icon, index, loading }) => (
   <Card
@@ -111,6 +112,7 @@ const DashboardHome = () => {
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [now, setNow] = useState(Date.now());
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -134,6 +136,8 @@ const DashboardHome = () => {
   }, [loadDashboard]);
 
   const customer = dashboard?.customer || {};
+  const kycStatus = customer.kycStatus || user?.kycStatus;
+  const kycApprovedAt = customer.kycApprovedAt || user?.kycApprovedAt;
   const customerDisplayName = getDisplayName(customer.name || user?.name);
   const kpis = dashboard?.kpis || {};
   const emiReminder = dashboard?.emiReminder || {};
@@ -142,7 +146,24 @@ const DashboardHome = () => {
   const notifications = dashboard?.notifications || [];
   const investmentSummary = dashboard?.investmentSummary || {};
   const loanSummary = dashboard?.loanSummary || {};
-  const kycUi = getKycStatusUi(user?.kycStatus);
+  const kycUi = getKycStatusUi(kycStatus);
+  const approvedAtTime = kycApprovedAt ? new Date(kycApprovedAt).getTime() : 0;
+  const showKycStatusCard = kycStatus !== 'Approved'
+    || !approvedAtTime
+    || now - approvedAtTime < KYC_APPROVED_CARD_VISIBLE_MS;
+
+  useEffect(() => {
+    if (kycStatus !== 'Approved' || !approvedAtTime) return undefined;
+
+    const remainingMs = KYC_APPROVED_CARD_VISIBLE_MS - (Date.now() - approvedAtTime);
+    if (remainingMs <= 0) {
+      setNow(Date.now());
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => setNow(Date.now()), remainingMs + 250);
+    return () => window.clearTimeout(timer);
+  }, [approvedAtTime, kycStatus]);
 
   const kpiCards = useMemo(() => [
     { title: 'Cash Balance', value: formatCurrency(kpis.cashBalance), subtitle: 'Across active bank accounts', icon: <AccountBalance /> },
@@ -206,20 +227,22 @@ const DashboardHome = () => {
       {error && <Alert severity="error" sx={{ mb: 2.5, borderRadius: '12px' }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2.5, borderRadius: '12px' }}>{success}</Alert>}
 
-      <Card sx={{ mb: 3, borderRadius: '18px', bgcolor: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 18px 38px rgba(15,23,42,0.12)' }}>
-        <CardContent sx={{ p: 2.5, display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Avatar sx={{ bgcolor: kycUi.bg, color: kycUi.color }}>
-              <VerifiedUser />
-            </Avatar>
-            <Box>
-              <Typography sx={{ color: navy, fontWeight: 900 }}>KYC Status</Typography>
-              <Typography sx={{ color: muted, fontSize: '0.88rem' }}>{kycUi.message}</Typography>
+      {showKycStatusCard && (
+        <Card sx={{ mb: 3, borderRadius: '18px', bgcolor: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 18px 38px rgba(15,23,42,0.12)' }}>
+          <CardContent sx={{ p: 2.5, display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Avatar sx={{ bgcolor: kycUi.bg, color: kycUi.color }}>
+                <VerifiedUser />
+              </Avatar>
+              <Box>
+                <Typography sx={{ color: navy, fontWeight: 900 }}>KYC Status</Typography>
+                <Typography sx={{ color: muted, fontSize: '0.88rem' }}>{kycUi.message}</Typography>
+              </Box>
             </Box>
-          </Box>
-          <Chip label={kycUi.label} sx={{ bgcolor: kycUi.bg, color: kycUi.color, fontWeight: 900 }} />
-        </CardContent>
-      </Card>
+            <Chip label={kycUi.label} sx={{ bgcolor: kycUi.bg, color: kycUi.color, fontWeight: 900 }} />
+          </CardContent>
+        </Card>
+      )}
 
       <Grid container spacing={2.5} sx={{ mb: 3 }}>
         {kpiCards.map((card, index) => (

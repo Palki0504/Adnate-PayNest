@@ -105,6 +105,8 @@ const getCustomerDashboard = async (req, res, next) => {
       customer: {
         name: req.user.name,
         customerId: req.user.customerId || req.user._id,
+        kycStatus: req.user.kycStatus || 'Not Started',
+        kycApprovedAt: req.user.kycApprovedAt || null,
       },
       kpis: {
         cashBalance,
