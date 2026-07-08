@@ -67,7 +67,7 @@ const BeneficiaryForm = ({ open, onClose, onSubmit, initialData = null, loading 
         setAccountVerified(true);
       } catch (error) {
         setFormData((prev) => ({ ...prev, customerId: '', beneficiaryName: '', accountType: '' }));
-        setLookupError(error.response?.data?.message || 'Invalid account number. No customer found.');
+        setLookupError(error.response?.data?.message || 'Invalid account number or customer ID. No customer found.');
       } finally {
         setLookupLoading(false);
       }
@@ -155,13 +155,13 @@ const BeneficiaryForm = ({ open, onClose, onSubmit, initialData = null, loading 
           </Grid>
           <Grid item xs={12}>
             <TextField
-              label="Account Number *"
+              label="Account Number or Customer ID *"
               name="accountNumber"
               value={formData.accountNumber || ''}
               onChange={handleChange}
               fullWidth
               disabled={Boolean(initialData)}
-              placeholder="Enter recipient account number"
+              placeholder="Enter recipient account number or customer ID"
               error={!!lookupError}
               helperText={lookupError || (accountVerified ? 'Account verified' : 'Customer details will be filled automatically')}
               InputProps={{ endAdornment: lookupLoading ? <CircularProgress size={18} /> : accountVerified ? <CheckCircle sx={{ color: '#16a34a' }} /> : null }}

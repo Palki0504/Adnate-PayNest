@@ -2,25 +2,37 @@ const Beneficiary = require('../models/Beneficiary');
 const Account = require('../models/Account');
 const User = require('../models/User');
 const { body, validationResult } = require('express-validator');
+const { getActiveAccountsForUser } = require('../utils/accountRecovery');
 
 const MAX_BENEFICIARIES = 10;
 
 const escapeRegex = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-const resolveAccountNumber = async (accountNumber) => {
-  const normalizedAccountNumber = String(accountNumber || '').trim().toUpperCase();
-  const account = await Account.findOne({ accountNumber: normalizedAccountNumber, status: 'active' });
-  if (!account) return null;
-  const customer = await User.findOne({ _id: account.userId, role: 'customer', isActive: true })
-    .select('name customerId');
-  return customer ? { account, customer } : null;
+const resolveAccountNumber = async (identifier) => {
+  const normalizedIdentifier = String(identifier || '').trim().toUpperCase();
+  if (!normalizedIdentifier) return null;
+
+  const account = await Account.findOne({ accountNumber: normalizedIdentifier, status: 'active' });
+  if (account) {
+    const customer = await User.findOne({ _id: account.userId, role: 'customer', isActive: true })
+      .select('name customerId primaryAccountType classification account1 account2 account3 accounts');
+    return customer ? { account, customer, lookupType: 'accountNumber' } : null;
+  }
+
+  const customer = await User.findOne({ customerId: normalizedIdentifier, role: 'customer', isActive: true })
+    .select('name customerId primaryAccountType classification account1 account2 account3 accounts');
+  if (!customer) return null;
+
+  const accounts = await getActiveAccountsForUser(customer);
+  const primaryAccount = accounts[0];
+  return primaryAccount ? { account: primaryAccount, customer, lookupType: 'customerId' } : null;
 };
 
 const lookupAccountNumber = async (req, res, next) => {
   try {
     const resolved = await resolveAccountNumber(req.params.accountNumber);
     if (!resolved) {
-      return res.status(404).json({ success: false, message: 'Invalid account number. No customer found.' });
+      return res.status(404).json({ success: false, message: 'Invalid account number or customer ID. No customer found.' });
     }
     if (String(resolved.customer._id) === String(req.user._id)) {
       return res.status(400).json({ success: false, message: 'You cannot use your own account as a beneficiary.' });
@@ -38,6 +50,7 @@ const lookupAccountNumber = async (req, res, next) => {
         customerName: resolved.customer.name,
         customerId: resolved.customer.customerId,
         beneficiaryNickname: savedBeneficiary?.nickname || '',
+        lookupType: resolved.lookupType,
       },
     });
   } catch (error) {
@@ -179,7 +192,7 @@ const addBeneficiary = async (req, res, next) => {
     if (!resolved) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid account number. No customer found.',
+        message: 'Invalid account number or customer ID. No customer found.',
       });
     }
     const { account: recipientAccount, customer: recipientUser } = resolved;
@@ -317,7 +330,7 @@ const addBeneficiaryValidation = [
     .isLength({ min: 2, max: 50 }).withMessage('Nickname must be 2-50 characters'),
   body('accountNumber')
     .trim()
-    .notEmpty().withMessage('Account number is required'),
+    .notEmpty().withMessage('Account number or customer ID is required'),
   body('beneficiaryEmail')
     .optional()
     .isEmail().withMessage('Please enter a valid email address'),
