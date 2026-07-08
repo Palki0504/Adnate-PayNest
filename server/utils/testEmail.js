@@ -6,16 +6,48 @@ const getEmailCredentials = () => ({
   user: process.env.EMAIL_USER?.trim(),
   pass: process.env.EMAIL_SERVICE === 'gmail'
     ? process.env.EMAIL_PASS?.replace(/\s/g, '')
-    : process.env.EMAIL_PASS?.trim(),
+    : (process.env.BREVO_API_KEY || process.env.EMAIL_API_KEY || process.env.EMAIL_PASS)?.trim(),
 });
 
 const createTransporter = () => {
   const auth = getEmailCredentials();
   const service = (process.env.EMAIL_SERVICE || 'smtp').trim().toLowerCase();
 
+  if (service === 'brevo') {
+    return {
+      verify: async () => true,
+      sendMail: async (mailOptions) => {
+        const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          headers: {
+            accept: 'application/json',
+            'api-key': auth.pass,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            sender: { email: auth.user, name: 'Adnate PayNest' },
+            to: [{ email: mailOptions.to }],
+            subject: mailOptions.subject,
+            textContent: mailOptions.text,
+          }),
+        });
+        const body = await response.text();
+        if (!response.ok) throw new Error(`Brevo API ${response.status}: ${body}`);
+        return body ? JSON.parse(body) : {};
+      },
+    };
+  }
+
   if (service === 'gmail') {
+    const port = parseInt(process.env.EMAIL_PORT, 10) || 465;
     return nodemailer.createTransport({
-      service: 'gmail',
+      host: process.env.EMAIL_HOST?.trim() || 'smtp.gmail.com',
+      port,
+      secure: port === 465,
+      family: 4,
+      connectionTimeout: 20000,
+      greetingTimeout: 20000,
+      socketTimeout: 30000,
       auth,
     });
   }

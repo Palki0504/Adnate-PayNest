@@ -175,14 +175,17 @@ const decorateMailOptions = (mailOptions) => {
   return decorated;
 };
 
-const getEmailCredentials = () => ({
-  user: process.env.EMAIL_USER?.trim(),
-  pass: getEmailService() === 'gmail'
-    ? process.env.EMAIL_PASS?.replace(/\s/g, '')
-    : process.env.EMAIL_PASS?.trim(),
-});
-
 const getEmailService = () => (process.env.EMAIL_SERVICE || 'smtp').trim().toLowerCase();
+
+const getEmailCredentials = () => {
+  const service = getEmailService();
+  return {
+    user: process.env.EMAIL_USER?.trim(),
+    pass: service === 'gmail'
+      ? process.env.EMAIL_PASS?.replace(/\s/g, '')
+      : (process.env.BREVO_API_KEY || process.env.EMAIL_API_KEY || process.env.EMAIL_PASS)?.trim(),
+  };
+};
 
 const isPlaceholderConfig = ({ user, pass }) =>
   !user ||
@@ -197,6 +200,9 @@ const getEmailAuthErrorMessage = () => {
   if (getEmailService() === 'gmail') {
     return 'Gmail rejected the login. Use a Google App Password for EMAIL_PASS, not your normal Gmail password.';
   }
+  if (getEmailService() === 'brevo') {
+    return 'Brevo rejected the email API request. Verify BREVO_API_KEY and EMAIL_USER environment variables.';
+  }
 
   return 'Email provider rejected the login. Verify EMAIL_USER and EMAIL_PASS environment variables.';
 };
@@ -208,6 +214,61 @@ const formatEmailError = (error) => [
   error.response && `response=${error.response}`,
   error.message && `message=${error.message}`,
 ].filter(Boolean).join(' | ') || String(error);
+
+const normalizeEmailList = (value) => {
+  if (Array.isArray(value)) return value.flatMap(normalizeEmailList);
+  if (!value) return [];
+  return String(value)
+    .split(',')
+    .map((email) => email.trim())
+    .filter(Boolean)
+    .map((email) => ({ email: email.replace(/^.*<([^>]+)>.*$/, '$1').trim() }));
+};
+
+const createBrevoTransporter = (auth) => ({
+  verify: async () => {
+    if (!auth.user || !auth.pass) {
+      throw new Error('Brevo email is not configured. Set EMAIL_USER and BREVO_API_KEY.');
+    }
+    return true;
+  },
+  sendMail: async (mailOptions) => {
+    const preparedOptions = decorateMailOptions({
+      from: getDefaultFromAddress(auth.user),
+      ...mailOptions,
+    });
+    const to = normalizeEmailList(preparedOptions.to);
+    if (!to.length) throw new Error('Email recipient is required.');
+
+    const htmlContent = String(preparedOptions.html || '')
+      .replace(/<img[^>]+src=(['"])cid:adnate-paynest-logo\1[^>]*>/gi, '');
+    const payload = {
+      sender: { email: auth.user, name: 'Adnate PayNest' },
+      to,
+      subject: preparedOptions.subject,
+      ...(htmlContent ? { htmlContent } : {}),
+      ...(preparedOptions.text ? { textContent: preparedOptions.text } : {}),
+    };
+
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'api-key': auth.pass,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error(`Brevo API ${response.status}: ${body}`);
+    }
+    const result = body ? JSON.parse(body) : {};
+    console.log(`[EMAIL SENT] to=${preparedOptions.to} subject="${preparedOptions.subject}" messageId=${result.messageId || 'n/a'}`);
+    return result;
+  },
+});
 
 const getDefaultFromAddress = (user) => `"Adnate PayNest" <${user}>`;
 
@@ -226,7 +287,9 @@ const createTransporter = () => {
   }
 
   const service = getEmailService();
-  const transporter = service === 'gmail'
+  const transporter = service === 'brevo'
+    ? createBrevoTransporter(auth)
+    : service === 'gmail'
     ? (() => {
       const port = parseInt(process.env.EMAIL_PORT, 10) || 465;
       return nodemailer.createTransport({
