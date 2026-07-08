@@ -102,6 +102,11 @@ const CustomerDashboard = () => {
     if (isMobile) setMobileOpen(false);
   };
 
+  const handleOpenNotifications = () => {
+    navigate('/customer-dashboard/notifications');
+    if (isMobile) setMobileOpen(false);
+  };
+
   const DrawerContent = () => (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#071b3a' }}>
       {/* Logo */}
@@ -324,8 +329,9 @@ const CustomerDashboard = () => {
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <Tooltip title="Notifications">
                 <IconButton
-                  onClick={() => navigate('/customer-dashboard/notifications')}
-                  sx={{ color: 'rgba(255,255,255,0.78)', '&:hover': { color: '#60a5fa' } }}
+                  aria-label="Open notifications"
+                  onClick={handleOpenNotifications}
+                  sx={{ color: 'rgba(255,255,255,0.78)', cursor: 'pointer', '&:hover': { color: '#60a5fa' } }}
                 >
                   <Badge badgeContent={unreadCount} color="error" max={9}>
                     <Notifications />
