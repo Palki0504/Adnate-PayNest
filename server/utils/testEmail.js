@@ -3,15 +3,79 @@ require('dotenv').config();
 const nodemailer = require('nodemailer');
 
 const getEmailCredentials = () => ({
-  user: process.env.EMAIL_USER?.trim(),
-  pass: process.env.EMAIL_SERVICE === 'gmail'
+  user: (process.env.GMAIL_USER || process.env.EMAIL_USER || process.env.EMAIL_FROM)?.trim(),
+  pass: process.env.EMAIL_SERVICE === 'gmail_api' || process.env.EMAIL_SERVICE === 'gmail-api'
+    ? process.env.GMAIL_REFRESH_TOKEN?.trim()
+    : process.env.EMAIL_SERVICE === 'gmail'
     ? process.env.EMAIL_PASS?.replace(/\s/g, '')
     : (process.env.BREVO_API_KEY || process.env.EMAIL_API_KEY || process.env.EMAIL_PASS)?.trim(),
 });
 
+const hasGmailApiConfig = () =>
+  Boolean(
+    (process.env.GMAIL_USER || process.env.EMAIL_USER || process.env.EMAIL_FROM)?.trim()
+    && process.env.GMAIL_CLIENT_ID?.trim()
+    && process.env.GMAIL_CLIENT_SECRET?.trim()
+    && process.env.GMAIL_REFRESH_TOKEN?.trim()
+  );
+
+const base64Url = (value) => Buffer.from(value)
+  .toString('base64')
+  .replace(/\+/g, '-')
+  .replace(/\//g, '_')
+  .replace(/=+$/g, '');
+
+const getGmailApiAccessToken = async () => {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GMAIL_CLIENT_ID.trim(),
+      client_secret: process.env.GMAIL_CLIENT_SECRET.trim(),
+      refresh_token: process.env.GMAIL_REFRESH_TOKEN.trim(),
+      grant_type: 'refresh_token',
+    }).toString(),
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error(`Gmail token ${response.status}: ${body}`);
+  return JSON.parse(body).access_token;
+};
+
 const createTransporter = () => {
   const auth = getEmailCredentials();
   const service = (process.env.EMAIL_SERVICE || 'smtp').trim().toLowerCase();
+
+  if (service === 'gmail_api' || service === 'gmail-api' || hasGmailApiConfig()) {
+    return {
+      verify: async () => {
+        await getGmailApiAccessToken();
+        return true;
+      },
+      sendMail: async (mailOptions) => {
+        const accessToken = await getGmailApiAccessToken();
+        const raw = [
+          `From: "Adnate PayNest" <${auth.user}>`,
+          `To: ${mailOptions.to}`,
+          `Subject: ${mailOptions.subject}`,
+          'MIME-Version: 1.0',
+          'Content-Type: text/plain; charset="UTF-8"',
+          '',
+          mailOptions.text,
+        ].join('\r\n');
+        const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({ raw: base64Url(raw) }),
+        });
+        const body = await response.text();
+        if (!response.ok) throw new Error(`Gmail send ${response.status}: ${body}`);
+        return body ? JSON.parse(body) : {};
+      },
+    };
+  }
 
   if (service === 'brevo') {
     return {

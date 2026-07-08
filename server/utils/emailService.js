@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const fs = require('fs/promises');
 const path = require('path');
 const { randomUUID } = require('crypto');
 const { getDisplayName } = require('./nameFormat');
@@ -180,12 +181,22 @@ const getEmailService = () => (process.env.EMAIL_SERVICE || 'smtp').trim().toLow
 const getEmailCredentials = () => {
   const service = getEmailService();
   return {
-    user: process.env.EMAIL_USER?.trim(),
-    pass: service === 'gmail'
+    user: (process.env.GMAIL_USER || process.env.EMAIL_USER || process.env.EMAIL_FROM)?.trim(),
+    pass: service === 'gmail_api' || service === 'gmail-api'
+      ? process.env.GMAIL_REFRESH_TOKEN?.trim()
+      : service === 'gmail'
       ? process.env.EMAIL_PASS?.replace(/\s/g, '')
       : (process.env.BREVO_API_KEY || process.env.EMAIL_API_KEY || process.env.EMAIL_PASS)?.trim(),
   };
 };
+
+const hasGmailApiConfig = () =>
+  Boolean(
+    (process.env.GMAIL_USER || process.env.EMAIL_USER || process.env.EMAIL_FROM)?.trim()
+    && process.env.GMAIL_CLIENT_ID?.trim()
+    && process.env.GMAIL_CLIENT_SECRET?.trim()
+    && process.env.GMAIL_REFRESH_TOKEN?.trim()
+  );
 
 const isPlaceholderConfig = ({ user, pass }) =>
   !user ||
@@ -197,6 +208,9 @@ const isPlaceholderConfig = ({ user, pass }) =>
   pass.includes('replace-with');
 
 const getEmailAuthErrorMessage = () => {
+  if (getEmailService() === 'gmail_api' || getEmailService() === 'gmail-api') {
+    return 'Gmail API rejected the request. Verify GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, and gmail.send scope.';
+  }
   if (getEmailService() === 'gmail') {
     return 'Gmail rejected the login. Use a Google App Password for EMAIL_PASS, not your normal Gmail password.';
   }
@@ -270,6 +284,140 @@ const createBrevoTransporter = (auth) => ({
   },
 });
 
+const base64Url = (value) => Buffer.from(value)
+  .toString('base64')
+  .replace(/\+/g, '-')
+  .replace(/\//g, '_')
+  .replace(/=+$/g, '');
+
+const foldBase64 = (value) => value.match(/.{1,76}/g)?.join('\r\n') || '';
+
+const escapeHeader = (value) => String(value || '').replace(/[\r\n]+/g, ' ').trim();
+
+const encodeSubject = (value) => {
+  const subject = escapeHeader(value);
+  return /^[\x00-\x7F]*$/.test(subject)
+    ? subject
+    : `=?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`;
+};
+
+const buildMimeMessage = async (mailOptions) => {
+  const headers = [
+    `From: ${escapeHeader(mailOptions.from)}`,
+    `To: ${escapeHeader(mailOptions.to)}`,
+    mailOptions.cc && `Cc: ${escapeHeader(mailOptions.cc)}`,
+    mailOptions.bcc && `Bcc: ${escapeHeader(mailOptions.bcc)}`,
+    `Subject: ${encodeSubject(mailOptions.subject)}`,
+    'MIME-Version: 1.0',
+  ].filter(Boolean);
+
+  const cleanedHtml = String(mailOptions.html || '')
+    .replace(/<img[^>]+src=(['"])cid:adnate-paynest-logo\1[^>]*>/gi, '');
+  const text = mailOptions.text || '';
+  const attachments = (Array.isArray(mailOptions.attachments) ? mailOptions.attachments : [])
+    .filter((attachment) => attachment.cid !== BANK_LOGO_CID);
+
+  const alternativeBoundary = `alt_${randomUUID()}`;
+  const alternativePart = [
+    `Content-Type: multipart/alternative; boundary="${alternativeBoundary}"`,
+    '',
+    `--${alternativeBoundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    foldBase64(Buffer.from(text || cleanedHtml.replace(/<[^>]*>/g, ' '), 'utf8').toString('base64')),
+    `--${alternativeBoundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    foldBase64(Buffer.from(cleanedHtml || text, 'utf8').toString('base64')),
+    `--${alternativeBoundary}--`,
+  ].join('\r\n');
+
+  if (!attachments.length) {
+    return [
+      ...headers,
+      alternativePart,
+    ].join('\r\n');
+  }
+
+  const mixedBoundary = `mixed_${randomUUID()}`;
+  const parts = [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${mixedBoundary}"`,
+    '',
+    `--${mixedBoundary}`,
+    alternativePart,
+  ];
+
+  for (const attachment of attachments) {
+    const content = attachment.content
+      ? Buffer.isBuffer(attachment.content)
+        ? attachment.content
+        : Buffer.from(attachment.content)
+      : await fs.readFile(attachment.path);
+    const filename = escapeHeader(attachment.filename || path.basename(attachment.path || 'attachment'));
+    parts.push(
+      `--${mixedBoundary}`,
+      `Content-Type: ${attachment.contentType || 'application/octet-stream'}; name="${filename}"`,
+      'Content-Transfer-Encoding: base64',
+      `Content-Disposition: attachment; filename="${filename}"`,
+      '',
+      foldBase64(content.toString('base64'))
+    );
+  }
+
+  parts.push(`--${mixedBoundary}--`);
+  return parts.join('\r\n');
+};
+
+const getGmailApiAccessToken = async () => {
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: process.env.GMAIL_CLIENT_ID.trim(),
+      client_secret: process.env.GMAIL_CLIENT_SECRET.trim(),
+      refresh_token: process.env.GMAIL_REFRESH_TOKEN.trim(),
+      grant_type: 'refresh_token',
+    }).toString(),
+  });
+  const body = await response.text();
+  if (!response.ok) throw new Error(`Gmail token ${response.status}: ${body}`);
+  return JSON.parse(body).access_token;
+};
+
+const createGmailApiTransporter = (auth) => ({
+  verify: async () => {
+    if (!hasGmailApiConfig()) {
+      throw new Error('Gmail API is not configured. Set GMAIL_USER, GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN.');
+    }
+    await getGmailApiAccessToken();
+    return true;
+  },
+  sendMail: async (mailOptions) => {
+    const preparedOptions = decorateMailOptions({
+      from: getDefaultFromAddress(auth.user),
+      ...mailOptions,
+    });
+    const accessToken = await getGmailApiAccessToken();
+    const raw = base64Url(await buildMimeMessage(preparedOptions));
+    const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ raw }),
+    });
+    const body = await response.text();
+    if (!response.ok) throw new Error(`Gmail send ${response.status}: ${body}`);
+    const result = body ? JSON.parse(body) : {};
+    console.log(`[EMAIL SENT] to=${preparedOptions.to} subject="${preparedOptions.subject}" messageId=${result.id || 'n/a'}`);
+    return result;
+  },
+});
+
 const getDefaultFromAddress = (user) => `"Adnate PayNest" <${user}>`;
 
 let cachedTransporter;
@@ -287,7 +435,9 @@ const createTransporter = () => {
   }
 
   const service = getEmailService();
-  const transporter = service === 'brevo'
+  const transporter = service === 'gmail_api' || service === 'gmail-api' || hasGmailApiConfig()
+    ? createGmailApiTransporter(auth)
+    : service === 'brevo'
     ? createBrevoTransporter(auth)
     : service === 'gmail'
     ? (() => {
