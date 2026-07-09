@@ -306,7 +306,7 @@ const TransferDialog = ({ open, onClose, beneficiary, onSubmit, loading = false,
     if (limits.dailyTransferLimit) {
       const dailyRemaining = limits.dailyTransferLimit - (limits.dailyTransferUsed || 0);
       if (amt > dailyRemaining) {
-        setValidationError(`Amount exceeds remaining daily transfer limit of ?${dailyRemaining.toLocaleString('en-IN')} (Limit: ?${limits.dailyTransferLimit.toLocaleString('en-IN')}).`);
+        setValidationError(`Amount exceeds remaining daily transfer limit of ${formatCurrency(dailyRemaining)} (Limit: ${formatCurrency(limits.dailyTransferLimit)}).`);
         return;
       }
     }
@@ -315,7 +315,7 @@ const TransferDialog = ({ open, onClose, beneficiary, onSubmit, loading = false,
     if (limits.monthlyTransferLimit) {
       const monthlyRemaining = limits.monthlyTransferLimit - (selectedAccount.monthlyTransferTotal || 0);
       if (amt > monthlyRemaining) {
-        setValidationError(`Amount exceeds remaining monthly transfer limit of ?${monthlyRemaining.toLocaleString('en-IN')} (Limit: ?${limits.monthlyTransferLimit.toLocaleString('en-IN')}).`);
+        setValidationError(`Amount exceeds remaining monthly transfer limit of ${formatCurrency(monthlyRemaining)} (Limit: ${formatCurrency(limits.monthlyTransferLimit)}).`);
         return;
       }
     }
@@ -324,11 +324,11 @@ const TransferDialog = ({ open, onClose, beneficiary, onSubmit, loading = false,
     const totalAvailable = selectedAccount.balance + (selectedAccount.overdraftLimit - selectedAccount.overdraftUsed);
     if (amt > selectedAccount.balance) {
       if (amt > totalAvailable) {
-        setValidationError(`Insufficient funds. Max available with overdraft: ?${totalAvailable.toLocaleString('en-IN')}`);
+        setValidationError(`Insufficient funds. Max available with overdraft: ${formatCurrency(totalAvailable)}`);
         return;
       } else {
         const odNeeded = amt - selectedAccount.balance;
-        setLimitsWarning(`This transfer will use ?${odNeeded.toLocaleString('en-IN')} of your overdraft. Remaining OD: ?${(selectedAccount.overdraftLimit - selectedAccount.overdraftUsed - odNeeded).toLocaleString('en-IN')}`);
+        setLimitsWarning(`This transfer will use ${formatCurrency(odNeeded)} of your overdraft. Remaining OD: ${formatCurrency(selectedAccount.overdraftLimit - selectedAccount.overdraftUsed - odNeeded)}`);
         return;
       }
     }
@@ -443,7 +443,7 @@ const TransferDialog = ({ open, onClose, beneficiary, onSubmit, loading = false,
               >
                 {userAccounts.map((acc) => (
                   <MenuItem key={acc._id} value={acc._id}>
-                    {acc.accountTypeLabel || acc.accountType} ({acc.accountNumber}) � Balance: ?{acc.balance?.toLocaleString('en-IN')}
+                    {acc.accountTypeLabel || acc.accountType} ({acc.accountNumber}) - Balance: {formatCurrency(acc.balance)}
                   </MenuItem>
                 ))}
               </Select>
@@ -457,15 +457,15 @@ const TransferDialog = ({ open, onClose, beneficiary, onSubmit, loading = false,
                 <Grid container spacing={1}>
                   <Grid item xs={6}>
                     <Typography sx={{ color: '#4B5563', fontSize: '0.72rem' }}>Daily Limit:</Typography>
-                    <Typography sx={{ color: '#111827', fontSize: '0.8rem', fontWeight: 600 }}>?{selectedAccount.limits?.dailyTransferLimit?.toLocaleString('en-IN')}</Typography>
+                    <Typography sx={{ color: '#111827', fontSize: '0.8rem', fontWeight: 600 }}>{formatCurrency(selectedAccount.limits?.dailyTransferLimit)}</Typography>
                   </Grid>
                   <Grid item xs={6}>
                     <Typography sx={{ color: '#4B5563', fontSize: '0.72rem' }}>Monthly Limit:</Typography>
-                    <Typography sx={{ color: '#111827', fontSize: '0.8rem', fontWeight: 600 }}>?{selectedAccount.limits?.monthlyTransferLimit?.toLocaleString('en-IN')}</Typography>
+                    <Typography sx={{ color: '#111827', fontSize: '0.8rem', fontWeight: 600 }}>{formatCurrency(selectedAccount.limits?.monthlyTransferLimit)}</Typography>
                   </Grid>
                   <Grid item xs={6}>
                     <Typography sx={{ color: '#4B5563', fontSize: '0.72rem' }}>Overdraft Limit:</Typography>
-                    <Typography sx={{ color: '#111827', fontSize: '0.8rem', fontWeight: 600 }}>?{selectedAccount.overdraftLimit?.toLocaleString('en-IN')}</Typography>
+                    <Typography sx={{ color: '#111827', fontSize: '0.8rem', fontWeight: 600 }}>{formatCurrency(selectedAccount.overdraftLimit)}</Typography>
                   </Grid>
                 </Grid>
               </Box>
@@ -474,7 +474,7 @@ const TransferDialog = ({ open, onClose, beneficiary, onSubmit, loading = false,
 
           <Grid item xs={12}>
             <TextField
-              label="Amount (?) *"
+              label="Amount (INR) *"
               name="amount"
               type="number"
               value={formData.amount}
@@ -601,7 +601,7 @@ const SuccessDialog = ({ open, onClose, data }) => {
         <Box sx={{ p: 2.5, bgcolor: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: '12px', mb: 3, textAlign: 'left' }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
             <Typography sx={{ color: '#6B7280', fontSize: '0.78rem' }}>Amount Sent:</Typography>
-            <Typography sx={{ color: '#10b981', fontSize: '0.9rem', fontWeight: 700 }}>?{data.amount.toLocaleString('en-IN')}</Typography>
+            <Typography sx={{ color: '#10b981', fontSize: '0.9rem', fontWeight: 700 }}>{formatCurrency(data.amount)}</Typography>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5 }}>
             <Typography sx={{ color: '#6B7280', fontSize: '0.78rem' }}>Transaction ID:</Typography>
@@ -610,7 +610,7 @@ const SuccessDialog = ({ open, onClose, data }) => {
           {data.fromAccountBalance !== undefined && (
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
               <Typography sx={{ color: '#6B7280', fontSize: '0.78rem' }}>Updated Balance:</Typography>
-              <Typography sx={{ color: '#111827', fontSize: '0.85rem', fontWeight: 600 }}>?{data.fromAccountBalance.toLocaleString('en-IN')}</Typography>
+              <Typography sx={{ color: '#111827', fontSize: '0.85rem', fontWeight: 600 }}>{formatCurrency(data.fromAccountBalance)}</Typography>
             </Box>
           )}
         </Box>
