@@ -17,6 +17,7 @@ const certificateMoney = (value) => `Rs. ${new Intl.NumberFormat('en-IN', { maxi
 const deductionMoney = (value) => (Number(value || 0) > 0 ? `- ${money(value)}` : money(0));
 const date = (value) => (value ? new Date(value).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '-');
 const PREMATURE_PENALTY_MULTIPLIER = 2;
+const RENEWAL_ELIGIBLE_STATUS = 'Premature Closed';
 const isoDate = (value = new Date()) => {
   const parsed = new Date(value);
   return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
@@ -394,6 +395,10 @@ const CustomerInvestments = ({ type = 'FD' }) => {
       setError(`Please select an ${isFD ? 'FD' : 'RD'} account to renew.`);
       return;
     }
+    if (selectedRecord.status !== RENEWAL_ELIGIBLE_STATUS) {
+      setError(`Only premature closed ${isFD ? 'FD' : 'RD'} accounts can be renewed.`);
+      return;
+    }
     if (selectedRecord.renewalRequest?.status === 'Pending') {
       setError('Renewal request already sent and pending for approval.');
       return;
@@ -482,7 +487,7 @@ const CustomerInvestments = ({ type = 'FD' }) => {
   const activeFDs = records.filter((record) => record.status === 'Active');
   const certificateFDs = records.filter((record) => ['Active', 'Matured', 'Closed'].includes(record.status));
   const renewalEligibleFDs = records.filter((record) => (
-    ['Active', 'Matured'].includes(record.status) && record.renewalRequest?.status !== 'Pending'
+    record.status === RENEWAL_ELIGIBLE_STATUS && record.renewalRequest?.status !== 'Pending'
   ));
   const fdSummary = records.reduce((summary, record) => ({
     investment: summary.investment + Number(record.depositAmount || 0),
@@ -696,7 +701,7 @@ const CustomerInvestments = ({ type = 'FD' }) => {
 
     if (activeSection === 'renewal') {
       return (
-        <SectionCard title="Select FD for Renewal" subtitle="Choose an FD account to renew your fixed deposit.">
+        <SectionCard title="Select FD for Renewal" subtitle="Only premature closed FD accounts are eligible for renewal.">
           <Grid container spacing={2.5}>
             <Grid item xs={12} md={7}>
               <FDField label="Select FD Account">
@@ -741,7 +746,7 @@ const CustomerInvestments = ({ type = 'FD' }) => {
                 </Paper>
               ) : (
                 <Paper sx={{ p: 3.5, textAlign: 'center', borderRadius: '16px', bgcolor: '#fff', border: '1px dashed #cbd5e1', color: '#64748b', fontWeight: 800 }}>
-                  Select an eligible FD account to view renewal details.
+                  No premature closed FD account is available for renewal.
                 </Paper>
               )}
             </Grid>
@@ -1016,7 +1021,7 @@ const CustomerInvestments = ({ type = 'FD' }) => {
   ];
   const activeRDs = records.filter((record) => record.status === 'Active');
   const rdCertificateRows = records.filter((record) => ['Active', 'Matured', 'Closed'].includes(record.status));
-  const rdRenewalRows = records.filter((record) => ['Active', 'Matured'].includes(record.status) && record.renewalRequest?.status !== 'Pending');
+  const rdRenewalRows = records.filter((record) => record.status === RENEWAL_ELIGIBLE_STATUS && record.renewalRequest?.status !== 'Pending');
 
   const rdTable = (tableRows = records) => (
     <TableContainer sx={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '14px' }}>
@@ -1138,7 +1143,7 @@ const CustomerInvestments = ({ type = 'FD' }) => {
       );
     }
     if (activeSection === 'renewal') {
-      return <SectionCard title="RD Renewal" subtitle="Request manager approval to renew an active or matured RD using current admin-defined rates."><Grid container spacing={2.2}><Grid item xs={12}><TextField select fullWidth label="Select RD Account" value={selected} onChange={(e) => setSelected(e.target.value)} sx={fieldSx}>{rdRenewalRows.map((record) => <MenuItem key={record._id} value={record._id}>{record.rdId} - Maturity {date(record.maturityDate)}</MenuItem>)}</TextField></Grid><Grid item xs={12}><Button variant="contained" startIcon={renewalLoading ? <CircularProgress size={18} color="inherit" /> : <Refresh />} disabled={renewalLoading || !selected || selectedRecord?.renewalRequest?.status === 'Pending'} onClick={updateRenewal} sx={primaryFdButtonSx}>{renewalLoading ? 'Sending Request...' : 'Renew RD'}</Button></Grid></Grid></SectionCard>;
+      return <SectionCard title="RD Renewal" subtitle="Only premature closed RD accounts are eligible for renewal."><Grid container spacing={2.2}><Grid item xs={12}><TextField select fullWidth label="Select RD Account" value={selected} onChange={(e) => setSelected(e.target.value)} sx={fieldSx}><MenuItem value="" disabled>{rdRenewalRows.length ? 'Select RD Account' : 'No premature closed RD account available'}</MenuItem>{rdRenewalRows.map((record) => <MenuItem key={record._id} value={record._id}>{record.rdId} - Maturity {date(record.maturityDate)}</MenuItem>)}</TextField></Grid><Grid item xs={12}><Button variant="contained" startIcon={renewalLoading ? <CircularProgress size={18} color="inherit" /> : <Refresh />} disabled={renewalLoading || !selected || selectedRecord?.renewalRequest?.status === 'Pending'} onClick={updateRenewal} sx={primaryFdButtonSx}>{renewalLoading ? 'Sending Request...' : 'Renew RD'}</Button></Grid></Grid></SectionCard>;
     }
     if (activeSection === 'certificates') {
       return (

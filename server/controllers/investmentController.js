@@ -714,9 +714,9 @@ const requestFDRenewal = async (req, res) => {
   const fd = await FixedDeposit.findOne({
     _id: req.params.id,
     userId: req.user._id,
-    status: { $in: ['Active', 'Matured'] },
+    status: 'Premature Closed',
   });
-  if (!fd) return res.status(404).json({ success: false, message: 'Eligible FD not found for renewal.' });
+  if (!fd) return res.status(404).json({ success: false, message: 'Only premature closed FDs are eligible for renewal.' });
   if (fd.renewalRequest?.status === 'Pending') {
     return res.status(400).json({ success: false, message: 'Renewal request already sent and pending for approval.' });
   }
@@ -797,9 +797,9 @@ const requestRDRenewal = async (req, res) => {
   const rd = await RecurringDeposit.findOne({
     _id: req.params.id,
     userId: req.user._id,
-    status: { $in: ['Active', 'Matured'] },
+    status: 'Premature Closed',
   });
-  if (!rd) return res.status(404).json({ success: false, message: 'Eligible RD not found for renewal.' });
+  if (!rd) return res.status(404).json({ success: false, message: 'Only premature closed RDs are eligible for renewal.' });
   if (rd.renewalRequest?.status === 'Pending') {
     return res.status(400).json({ success: false, message: 'Renewal request already sent and pending for approval.' });
   }
