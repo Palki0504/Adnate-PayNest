@@ -9,6 +9,7 @@ import {
   NavigateBefore, NavigateNext, Person, Send, Work,
 } from '@mui/icons-material';
 import { loanApplicationAPI } from '../../services/api';
+import { useToast } from '../../components/common/GlobalToastProvider';
 
 const steps = [
   { label: 'Loan Details', color: '#3b82f6', bg: '#eff6ff', icon: <AccountBalance /> },
@@ -133,6 +134,31 @@ const PremiumSectionCard = ({ step, children }) => (
 const currency = (value) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value || 0);
 
+const nonNegativeNumericFields = new Set([
+  'loanAmount',
+  'monthlyIncome',
+  'workExperience',
+  'existingEMI',
+  'monthlyExpenses',
+  'overdraftUtilization',
+]);
+
+const nonNegativeInputProps = {
+  min: 0,
+  onKeyDown: (event) => {
+    if (event.key === '-' || event.key === 'e' || event.key === 'E' || event.key === '+') {
+      event.preventDefault();
+    }
+  },
+};
+
+const toNonNegativeInputValue = (value) => {
+  if (value === '') return '';
+  const number = Number(value);
+  if (!Number.isFinite(number)) return '';
+  return String(Math.max(0, number));
+};
+
 const calculateTotals = (amount, annualRate, tenure, tenureUnit) => {
   const principal = Number(amount || 0);
   const tenureValue = Number(tenure || 0);
@@ -147,13 +173,12 @@ const calculateTotals = (amount, annualRate, tenure, tenureUnit) => {
 };
 
 const ApplyLoanWizard = ({ onSubmitted }) => {
+  const toast = useToast();
   const [activeStep, setActiveStep] = useState(0);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [bootstrap, setBootstrap] = useState({ accounts: [], configs: [], customer: {} });
   const [declaration, setDeclaration] = useState(false);
   const [documents, setDocuments] = useState({});
@@ -194,9 +219,9 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
         setPersonalDetails(personal);
         setEmploymentDetails((current) => ({ ...current, designation: customer.designation || '' }));
       })
-      .catch((err) => setError(err.response?.data?.message || 'Unable to load loan application data.'))
+      .catch((err) => toast.error(err.response?.data?.message || 'Unable to load loan application data.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [toast]);
 
   const totals = useMemo(
     () => calculateTotals(loanDetails.loanAmount, loanDetails.interestRate, loanDetails.tenure, loanDetails.tenureUnit),
@@ -207,6 +232,27 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
     () => bootstrap.configs.find((config) => config.loanType === loanDetails.loanType),
     [bootstrap.configs, loanDetails.loanType],
   );
+  const selectedRepaymentAccount = useMemo(
+    () => bootstrap.accounts.find((account) => account._id === loanDetails.linkedAccountId),
+    [bootstrap.accounts, loanDetails.linkedAccountId],
+  );
+  const portalDerivedEmploymentDetails = useMemo(() => {
+    const openLoans = bootstrap.existingLoans || [];
+    const existingEMI = openLoans.reduce((sum, loan) => {
+      const status = String(loan.status || '').toLowerCase();
+      const isOpenLoan = ['pending', 'submitted', 'under review', 'approved', 'active', 'disbursed'].includes(status);
+      return isOpenLoan ? sum + Math.max(0, Number(loan.monthlyEMI || 0)) : sum;
+    }, 0);
+    const overdraftLimit = Math.max(0, Number(selectedRepaymentAccount?.overdraftLimit || 0));
+    const overdraftUsed = Math.max(0, Number(selectedRepaymentAccount?.overdraftUsed || 0));
+    const overdraftUtilization = overdraftLimit > 0
+      ? Math.min(100, Math.round((overdraftUsed / overdraftLimit) * 10000) / 100)
+      : 0;
+    return {
+      existingEMI: String(Math.round(existingEMI)),
+      overdraftUtilization: String(overdraftUtilization),
+    };
+  }, [bootstrap.existingLoans, selectedRepaymentAccount]);
   const loanProductOptions = useMemo(
     () => bootstrap.configs.map((config) => ({ value: config.loanType, label: config.displayName || config.loanType })),
     [bootstrap.configs],
@@ -260,6 +306,15 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
   }, [employmentDetails.employmentType, loanDetails.loanType]);
 
   useEffect(() => {
+    if (isStudentApplicant) return;
+    setEmploymentDetails((current) => ({
+      ...current,
+      existingEMI: portalDerivedEmploymentDetails.existingEMI,
+      overdraftUtilization: portalDerivedEmploymentDetails.overdraftUtilization,
+    }));
+  }, [isStudentApplicant, portalDerivedEmploymentDetails]);
+
+  useEffect(() => {
     if (!isStudentApplicant) {
       setStudentDetails({
         studentType: '', institutionName: '', classOrSemester: '', institutionAddress: '',
@@ -306,8 +361,19 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
       setLoanDetails((current) => ({ ...current, tenureUnit: value, tenure: '' }));
       return;
     }
-    setLoanDetails((current) => ({ ...current, [name]: value }));
+    setLoanDetails((current) => ({
+      ...current,
+      [name]: nonNegativeNumericFields.has(name) ? toNonNegativeInputValue(value) : value,
+    }));
   }, [bootstrap.configs]);
+
+  const handleEmploymentChange = useCallback((event) => {
+    const { name, value } = event.target;
+    setEmploymentDetails((current) => ({
+      ...current,
+      [name]: nonNegativeNumericFields.has(name) ? toNonNegativeInputValue(value) : value,
+    }));
+  }, []);
 
   const validateStep = () => {
     if (activeStep === 0 && duplicateLoanWarning) {
@@ -337,16 +403,29 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
     return '';
   };
 
+  const focusFirstInvalidField = useCallback(() => {
+    window.setTimeout(() => {
+      const field = document.querySelector(
+        'input:invalid, textarea:invalid, select:invalid, [aria-invalid="true"] input, [aria-invalid="true"] textarea'
+      );
+      field?.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+      field?.focus?.({ preventScroll: true });
+    }, 50);
+  }, []);
+
   const next = async () => {
     const message = validateStep();
-    if (message) return setError(message);
-    setError('');
+    if (message) {
+      toast.warning(message);
+      focusFirstInvalidField();
+      return;
+    }
     if (activeStep === 0) {
       setSavingDraft(true);
       try {
         await loanApplicationAPI.saveDraft({ loanDetails });
       } catch (err) {
-        setError(err.response?.data?.message || 'Unable to save loan details.');
+        toast.error(err.response?.data?.message || 'Unable to save loan details.');
         setSavingDraft(false);
         return;
       }
@@ -357,27 +436,36 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
 
   const readFile = (type, file) => {
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) return setError('Each document must be 2 MB or smaller.');
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Each document must be 2 MB or smaller.');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       setDocuments((current) => ({
         ...current,
         [type]: { type, name: file.name, size: file.size, mimeType: file.type, data: reader.result },
       }));
-      setError('');
     };
     reader.readAsDataURL(file);
   };
 
   const submit = async () => {
     if (submitting) {
-      setError('Request already sent and pending for approval.');
+      toast.warning('Loan application already submitted and pending for approval.');
       return;
     }
-    if (duplicateLoanWarning) return setError(duplicateLoanWarning);
-    if (!declaration) return setError('Please accept the declaration before submitting.');
+    if (duplicateLoanWarning) {
+      toast.warning('Loan application already submitted and pending for approval.');
+      onSubmitted?.();
+      return;
+    }
+    if (!declaration) {
+      toast.warning('Please accept the declaration before submitting.');
+      focusFirstInvalidField();
+      return;
+    }
     setSubmitting(true);
-    setError('');
     try {
       const response = await loanApplicationAPI.submit({
         loanDetails,
@@ -386,14 +474,16 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
         studentDetails,
         documents: displayedDocuments.map(([key]) => documents[key]).filter(Boolean),
       });
-      setSuccess(response.data.message);
+      toast.success('Loan application submitted successfully.');
       setSubmitted(true);
-      onSubmitted?.();
+      onSubmitted?.(response.data.application);
     } catch (err) {
       const apiMessage = err.response?.data?.message;
-      setError(apiMessage === 'This request is already pending for manager approval.'
-        ? 'Request already sent and pending for approval.'
-        : apiMessage || 'Loan application submission failed.');
+      const message = apiMessage === 'This request is already pending for manager approval.'
+        ? 'Loan application already submitted and pending for approval.'
+        : apiMessage || 'Loan application submission failed.';
+      toast.error(message);
+      if (err.response?.status === 409) onSubmitted?.();
     } finally {
       setSubmitting(false);
     }
@@ -405,8 +495,6 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
     <Box sx={{ p: { xs: 1.5, sm: 2.5, md: 3 }, bgcolor: 'transparent', color: '#172033' }}>
       <Typography sx={{ fontSize: { xs: '1.35rem', md: '1.65rem' }, fontWeight: 800, color: '#0b1f4d' }}>Apply for a Loan</Typography>
       <Typography sx={{ color: '#64748b', mb: 3, mt: 0.5 }}>{submitted ? 'Your submitted loan application is read-only.' : 'Complete the five steps below. You can review everything before submission.'}</Typography>
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-      {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
 
       <Paper sx={{ p: { xs: 1.5, sm: 2.5 }, mb: 3, bgcolor: '#fff', color: '#0f172a', borderRadius: '18px', border: '1px solid #e2e8f0', boxShadow: '0 10px 28px rgba(15,23,42,.09)', overflowX: 'auto' }}>
         <Stepper activeStep={activeStep} alternativeLabel sx={{
@@ -460,7 +548,7 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
                 <TextField fullWidth name="purpose" value={loanDetails.purpose} onChange={handleLoanChange} sx={fieldSx} />
               </StepOneField>
               <StepOneField label="Loan Amount (₹)">
-                <TextField fullWidth type="number" name="loanAmount" value={loanDetails.loanAmount} onChange={handleLoanChange} sx={fieldSx} />
+                <TextField fullWidth type="number" name="loanAmount" value={loanDetails.loanAmount} onChange={handleLoanChange} inputProps={nonNegativeInputProps} sx={fieldSx} />
               </StepOneField>
               <StepOneField label="Loan Tenure">
                 <TextField select fullWidth name="tenure" value={loanDetails.tenure} onChange={handleLoanChange} disabled={!loanDetails.tenureUnit || tenureOptions.length === 0} sx={fieldSx}>
@@ -587,12 +675,25 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
               ]),
             ].map(([name, label, type = 'text', options]) => {
               const isRequired = name === 'employmentType' || !isStudentApplicant;
+              const isAutoFilledPortalField = name === 'existingEMI' || name === 'overdraftUtilization';
               return (
                 <Grid item xs={12} md={name.toLowerCase().includes('address') ? 8 : 4} key={name}>
                   <Typography component="label" sx={{ display: 'inline-block', color: '#0F172A', bgcolor: '#fff', borderRadius: '6px', px: .9, py: .35, fontSize: '.8rem', fontWeight: 600, mb: .9 }}>
                     {label}{isRequired ? ' *' : ''}
                   </Typography>
-                  <TextField required={isRequired} select={type === 'select'} fullWidth type={type === 'select' ? undefined : type} value={employmentDetails[name]} onChange={(e) => setEmploymentDetails((current) => ({ ...current, [name]: e.target.value }))} sx={fieldSx}>
+                  <TextField
+                    required={isRequired}
+                    select={type === 'select'}
+                    fullWidth
+                    type={type === 'select' ? undefined : type}
+                    name={name}
+                    value={employmentDetails[name]}
+                    onChange={handleEmploymentChange}
+                    inputProps={type === 'number' ? nonNegativeInputProps : undefined}
+                    disabled={isAutoFilledPortalField}
+                    helperText={isAutoFilledPortalField ? 'Auto-filled from your customer portal details.' : ''}
+                    sx={fieldSx}
+                  >
                     {options?.map((option) => <MenuItem key={option} value={option}>{option}</MenuItem>)}
                   </TextField>
                 </Grid>
@@ -751,7 +852,7 @@ const ApplyLoanWizard = ({ onSubmitted }) => {
               '&.Mui-disabled .MuiButton-endIcon, &.Mui-disabled .MuiSvgIcon-root': { color: '#fff' },
             }}
           >
-            {submitted ? 'Submitted' : 'Submit Application'}
+            {submitting ? 'Submitting...' : submitted ? 'Submitted' : 'Submit Application'}
           </Button>
         )}
       </Box>

@@ -25,6 +25,7 @@ const fieldSx = {
 };
 
 const statusBadgeSx = (status) => {
+  const displayStatus = status === 'Approved' ? 'Disbursed' : status;
   const palette = {
     Submitted: { bgcolor: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
     'Under Review': { bgcolor: '#ede9fe', color: '#7c3aed', border: '#c4b5fd' },
@@ -34,7 +35,7 @@ const statusBadgeSx = (status) => {
     Disbursed: { bgcolor: '#e2e8f0', color: '#334155', border: '#94a3b8' },
     Closed: { bgcolor: '#d1fae5', color: '#065f46', border: '#6ee7b7' },
   };
-  const colors = palette[status] || palette.Submitted;
+  const colors = palette[displayStatus] || palette.Submitted;
   return {
     bgcolor: colors.bgcolor,
     color: colors.color,
@@ -44,6 +45,8 @@ const statusBadgeSx = (status) => {
     '& .MuiChip-label': { px: 1.15 },
   };
 };
+
+const displayLoanStatus = (status) => status === 'Approved' ? 'Disbursed' : status;
 
 const classificationSx = (classification) => {
   const palette = {
@@ -104,9 +107,8 @@ const LoanRequestsPanel = () => {
   const requestMetrics = useMemo(() => ([
     { label: 'Total Requests', value: applications.length, color: '#2563eb', bg: '#dbeafe', icon: <Description /> },
     { label: 'Under Review', value: applications.filter((item) => item.status === 'Under Review').length, color: '#7c3aed', bg: '#ede9fe', icon: <AccessTime /> },
-    { label: 'Approved', value: applications.filter((item) => item.status === 'Approved').length, color: '#16a34a', bg: '#dcfce7', icon: <Check /> },
     { label: 'Rejected', value: applications.filter((item) => item.status === 'Rejected').length, color: '#dc2626', bg: '#fee2e2', icon: <CancelOutlined /> },
-    { label: 'Disbursed', value: applications.filter((item) => item.status === 'Disbursed').length, color: '#6d28d9', bg: '#ede9fe', icon: <Send /> },
+    { label: 'Disbursed', value: applications.filter((item) => ['Approved', 'Disbursed'].includes(item.status)).length, color: '#16a34a', bg: '#dcfce7', icon: <Send /> },
   ]), [applications]);
 
   const downloadReport = () => {
@@ -145,9 +147,8 @@ const LoanRequestsPanel = () => {
     const summary = [
       ['Total Requests', applications.length, [37, 99, 235]],
       ['Under Review', applications.filter((item) => item.status === 'Under Review').length, [245, 158, 11]],
-      ['Approved', applications.filter((item) => item.status === 'Approved').length, [22, 163, 74]],
       ['Rejected', applications.filter((item) => item.status === 'Rejected').length, [220, 38, 38]],
-      ['Disbursed', applications.filter((item) => item.status === 'Disbursed').length, [109, 40, 217]],
+      ['Disbursed', applications.filter((item) => ['Approved', 'Disbursed'].includes(item.status)).length, [22, 163, 74]],
     ];
     const cardGap = 4;
     const cardWidth = (pageWidth - 28 - (cardGap * 4)) / 5;
@@ -416,7 +417,7 @@ const LoanRequestsPanel = () => {
               <Typography sx={{ color: '#334155', fontWeight: 800, fontSize: '.82rem' }}>Status</Typography>
               <TextField select size="small" value={status} onChange={(event) => setStatus(event.target.value)} sx={{ ...fieldSx, width: { xs: '100%', sm: 205 } }}>
                 <MenuItem value="">All Statuses</MenuItem>
-                {['Submitted', 'Under Review', 'Approved', 'Rejected', 'More Info Required', 'Disbursed', 'Closed'].map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
+                {['Submitted', 'Under Review', 'Rejected', 'More Info Required', 'Disbursed', 'Closed'].map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
               </TextField>
               <Button variant="contained" startIcon={<Download />} onClick={downloadReport} sx={{ bgcolor: '#0B1F4D', color: '#fff', borderRadius: '10px', px: 2.3, minHeight: 40, fontWeight: 800, boxShadow: '0 7px 16px rgba(11,31,77,.2)', whiteSpace: 'nowrap', '&:hover': { bgcolor: '#163873', transform: 'translateY(-1px)' } }}>Download Report</Button>
             </Box>
@@ -482,7 +483,7 @@ const LoanRequestsPanel = () => {
                   <TableCell>
                     <Chip
                       size="small"
-                      label={item.status}
+                      label={displayLoanStatus(item.status)}
                       sx={statusBadgeSx(item.status)}
                     />
                   </TableCell>

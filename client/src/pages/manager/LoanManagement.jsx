@@ -180,6 +180,18 @@ const LoanManagement = () => {
     return Math.max(0, Math.ceil((new Date(value).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86400000));
   };
 
+  const emiStatusSx = (status) => {
+    const styles = {
+      'Due Soon': { bgcolor: '#ffedd5', color: '#c2410c', border: '#fdba74' },
+      'Due Today': { bgcolor: '#fee2e2', color: '#dc2626', border: '#fca5a5' },
+      Paid: { bgcolor: '#dcfce7', color: '#15803d', border: '#86efac' },
+      'Auto-Debit Scheduled': { bgcolor: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
+      Overdue: { bgcolor: '#7f1d1d', color: '#fff', border: '#450a0a' },
+    };
+    const value = styles[status] || styles['Due Soon'];
+    return { bgcolor: value.bgcolor, color: value.color, border: `1px solid ${value.border}`, fontWeight: 800, borderRadius: '8px' };
+  };
+
   // Review status trigger
   const handleReview = async (loanId) => {
     setLoading(true);
@@ -309,7 +321,6 @@ const LoanManagement = () => {
                 <MenuItem value="">All Statuses</MenuItem>
                 <MenuItem value="Submitted">Submitted</MenuItem>
                 <MenuItem value="Under Review">Under Review</MenuItem>
-                <MenuItem value="Approved">Approved</MenuItem>
                 <MenuItem value="Rejected">Rejected</MenuItem>
                 <MenuItem value="Disbursed">Disbursed</MenuItem>
                 <MenuItem value="Closed">Closed</MenuItem>
@@ -449,12 +460,14 @@ const LoanManagement = () => {
             <Paper sx={{ p: { xs: 2, md: 3 }, width: '100%', maxWidth: '100%', minWidth: 0, boxSizing: 'border-box', bgcolor: '#0B1F4D', color: '#fff', border: '1px solid rgba(147,197,253,.22)', borderRadius: '20px', boxShadow: '0 22px 52px rgba(2,12,36,.3)', overflow: 'hidden' }}>
               <Grid container spacing={2.5} sx={{ mb: 3 }}>
                 {[
-                  { label: 'Active Loans', value: monitoringStats.activeLoans, subtitle: 'Total active loans', color: '#2563eb', bg: '#dbeafe', icon: <AccountBalance /> },
-                  { label: 'Total Outstanding Amount', value: formatCurrency(monitoringStats.totalOutstanding), subtitle: 'Total outstanding amount', color: '#16a34a', bg: '#dcfce7', icon: <MonetizationOn /> },
-                  { label: 'Missed EMIs', value: monitoringStats.missedEMICount, subtitle: 'Missed EMI payments', color: '#ea580c', bg: '#ffedd5', icon: <Warning /> },
-                  { label: 'Delinquent Accounts', value: monitoringStats.delinquentLoans?.length || 0, subtitle: 'Accounts requiring attention', color: '#dc2626', bg: '#fee2e2', icon: <PriorityHigh /> },
+                  { label: 'Pending Applications', value: monitoringStats.pendingApplications || 0, subtitle: 'Waiting for manager action', color: '#2563eb', bg: '#dbeafe', icon: <History /> },
+                  { label: 'Disbursed / Active Loans', value: monitoringStats.activeLoans || 0, subtitle: 'Credited and currently active', color: '#16a34a', bg: '#dcfce7', icon: <AccountBalance /> },
+                  { label: 'Rejected Applications', value: monitoringStats.rejectedApplications || 0, subtitle: 'Rejected loan requests', color: '#dc2626', bg: '#fee2e2', icon: <Close /> },
+                  { label: 'Closed Loans', value: monitoringStats.closedLoans || 0, subtitle: 'Fully repaid loans', color: '#0891b2', bg: '#cffafe', icon: <Done /> },
+                  { label: 'Total Outstanding Amount', value: formatCurrency(monitoringStats.totalOutstanding), subtitle: 'Disbursed loans only', color: '#7c3aed', bg: '#ede9fe', icon: <MonetizationOn /> },
+                  { label: 'Upcoming EMIs', value: monitoringStats.upcomingEMICount || 0, subtitle: 'Due in next 7 days', color: '#ea580c', bg: '#ffedd5', icon: <CalendarMonth /> },
                 ].map((card) => (
-                  <Grid item xs={12} sm={6} xl={3} key={card.label} sx={{ minWidth: 0 }}>
+                  <Grid item xs={12} sm={6} lg={4} xl={2} key={card.label} sx={{ minWidth: 0 }}>
                     <Card sx={{ bgcolor: '#fff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 10px 26px rgba(2,12,36,.13)', height: '100%', transition: 'transform .2s ease, box-shadow .2s ease', '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 16px 34px rgba(2,12,36,.18)' } }}>
                       <CardContent sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 2 }}>
                         <Box sx={{ width: 54, height: 54, flexShrink: 0, display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: card.bg, color: card.color, boxShadow: `0 7px 18px ${card.color}22`, '& svg': { fontSize: 28 } }}>{card.icon}</Box>
@@ -470,7 +483,7 @@ const LoanManagement = () => {
               </Grid>
 
               <Grid container spacing={2.5} sx={{ mb: 3 }}>
-                <Grid item xs={12} lg={8} sx={{ minWidth: 0 }}>
+                <Grid item xs={12} sx={{ minWidth: 0 }}>
                   <Card sx={{ bgcolor: '#fff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 10px 26px rgba(2,12,36,.13)', height: '100%', overflow: 'hidden' }}>
                     <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 2 }}>
@@ -478,19 +491,21 @@ const LoanManagement = () => {
                         <Typography sx={{ color: '#0B1F4D', fontWeight: 900, fontSize: '1.05rem' }}>Upcoming EMI Deductions (Next 7 Days)</Typography>
                       </Box>
                       <TableContainer sx={{ width: '100%', overflowX: 'auto' }}>
-                        <Table size="small" sx={{ minWidth: 720 }}>
+                        <Table size="small" sx={{ minWidth: 1040 }}>
                       <TableHead><TableRow sx={{ bgcolor: '#eff6ff' }}>
-                            {['Customer Name', 'Loan Number', 'EMI Amount', 'Due Date', 'Days Left', 'Status'].map((heading) => <TableCell key={heading} sx={{ color: '#0B1F4D', fontWeight: 900, borderColor: '#dbeafe', whiteSpace: 'nowrap' }}>{heading}</TableCell>)}
+                            {['Customer Name', 'Customer ID', 'Loan Number', 'Loan Type', 'EMI Amount', 'Due Date', 'Days Left', 'Payment Status'].map((heading) => <TableCell key={heading} sx={{ color: '#0B1F4D', fontWeight: 900, borderColor: '#dbeafe', whiteSpace: 'nowrap' }}>{heading}</TableCell>)}
                           </TableRow></TableHead>
                           <TableBody>
                             {monitoringStats.upcomingEMIs?.map((emi, index) => (
                               <TableRow key={emi._id} sx={{ bgcolor: index % 2 ? '#f8fafc' : '#fff', '& td': { color: '#334155', borderColor: '#e2e8f0' } }}>
                                 <TableCell sx={{ fontWeight: 700 }}>{emi.userId?.name || 'Customer'}</TableCell>
+                                <TableCell sx={{ fontWeight: 700 }}>{emi.userId?.customerId || '-'}</TableCell>
                                 <TableCell sx={{ fontFamily: 'monospace', fontWeight: 700 }}>{emi.loanId?.loanNumber}</TableCell>
+                                <TableCell sx={{ textTransform: 'capitalize' }}>{emi.loanId?.loanType || '-'} Loan</TableCell>
                                 <TableCell sx={{ fontWeight: 800 }}>{formatCurrency(emi.emiAmount)}</TableCell>
                                 <TableCell>{formatDate(emi.dueDate)}</TableCell>
-                                <TableCell>{daysUntil(emi.dueDate)} days</TableCell>
-                                <TableCell><Chip size="small" label="Upcoming" sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd', fontWeight: 800 }} /></TableCell>
+                                <TableCell>{Number.isFinite(Number(emi.daysLeft)) ? `${emi.daysLeft} day${emi.daysLeft === 1 ? '' : 's'}` : `${daysUntil(emi.dueDate)} days`}</TableCell>
+                                <TableCell><Chip size="small" label={emi.paymentStatus || 'Due Soon'} sx={emiStatusSx(emi.paymentStatus)} /></TableCell>
                               </TableRow>
                             ))}
                           </TableBody>
@@ -507,7 +522,7 @@ const LoanManagement = () => {
                   </Card>
                 </Grid>
 
-                <Grid item xs={12} lg={4} sx={{ minWidth: 0 }}>
+                <Grid item xs={12} sx={{ minWidth: 0 }}>
                   <Card sx={{ bgcolor: '#fff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 10px 26px rgba(2,12,36,.13)', height: '100%' }}>
                     <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 2 }}>
@@ -528,48 +543,6 @@ const LoanManagement = () => {
                   </Card>
                 </Grid>
               </Grid>
-
-              <Card sx={{ bgcolor: '#fff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 10px 26px rgba(2,12,36,.13)', overflow: 'hidden' }}>
-                <CardContent sx={{ p: { xs: 2, md: 2.5 } }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2, mb: 2 }}>
-                    <Box sx={{ width: 38, height: 38, display: 'grid', placeItems: 'center', borderRadius: '10px', bgcolor: '#dbeafe', color: '#2563eb' }}><Assessment /></Box>
-                    <Typography sx={{ color: '#0B1F4D', fontWeight: 900, fontSize: '1.08rem' }}>Loan Overview</Typography>
-                  </Box>
-                  <TableContainer sx={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
-                    <Table size="small" sx={{ minWidth: 1320, tableLayout: 'fixed' }}>
-                      <TableHead><TableRow sx={{ bgcolor: '#eff6ff' }}>
-                        {['Customer Name', 'Customer Email', 'Loan Number', 'Loan Type', 'Loan Amount', 'Outstanding Balance', 'Interest Rate', 'Next EMI Due Date', 'Status', 'Action'].map((heading) => (
-                          <TableCell key={heading} sx={{ color: '#0B1F4D', fontWeight: 900, borderColor: '#dbeafe', whiteSpace: 'nowrap', px: 1.4, width: heading === 'Action' ? 130 : undefined }}>{heading}</TableCell>
-                        ))}
-                      </TableRow></TableHead>
-                      <TableBody>
-                        {requests.filter((loan) => ['Approved', 'Disbursed', 'Closed'].includes(loan.status)).map((loan, index) => {
-                          const status = getMonitoringStatus(loan);
-                          return (
-                            <TableRow key={loan._id} sx={{ bgcolor: index % 2 ? '#f8fafc' : '#fff', '& td': { color: '#334155', borderColor: '#e2e8f0', px: 1.4, py: 1.35, overflow: 'hidden' }, '&:hover': { bgcolor: '#eff6ff' } }}>
-                              <TableCell><Typography noWrap sx={{ fontWeight: 800 }}>{loan.userId?.name || 'Customer'}</Typography></TableCell>
-                              <TableCell><Typography noWrap sx={{ fontSize: '.78rem' }}>{loan.userId?.email || '-'}</Typography></TableCell>
-                              <TableCell><Typography noWrap sx={{ fontFamily: 'monospace', fontWeight: 700 }}>{loan.loanNumber}</Typography></TableCell>
-                              <TableCell sx={{ textTransform: 'capitalize' }}>{loan.loanType} Loan</TableCell>
-                              <TableCell sx={{ fontWeight: 700 }}>{formatCurrency(loan.approvedAmount || loan.amount)}</TableCell>
-                              <TableCell sx={{ color: '#2563eb !important', fontWeight: 900 }}>{formatCurrency(loan.outstandingBalance)}</TableCell>
-                              <TableCell>{loan.interestRate}% p.a.</TableCell>
-                              <TableCell>{formatDate(loan.nextEMIDueDate)}</TableCell>
-                              <TableCell><Chip size="small" label={status} sx={monitoringStatusSx(status)} /></TableCell>
-                              <TableCell sx={{ width: 130 }}>
-                                <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => openLoanDetails(loan)} sx={{ color: '#0B1F4D', borderColor: '#cbd5e1', borderRadius: '9px', fontWeight: 800, whiteSpace: 'nowrap', boxShadow: '0 4px 10px rgba(15,23,42,.08)', '&:hover': { bgcolor: '#0B1F4D', color: '#fff', borderColor: '#0B1F4D', transform: 'translateY(-1px)' } }}>View Details</Button>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        {requests.filter((loan) => ['Approved', 'Disbursed', 'Closed'].includes(loan.status)).length === 0 && (
-                          <TableRow><TableCell colSpan={10} align="center" sx={{ py: 5, color: '#64748b' }}>No active or closed loans are available.</TableCell></TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </CardContent>
-              </Card>
 
               <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: .8, color: 'rgba(255,255,255,.78)', mt: 2.5 }}>
                 <VerifiedUser sx={{ fontSize: 19, color: '#bfdbfe' }} />

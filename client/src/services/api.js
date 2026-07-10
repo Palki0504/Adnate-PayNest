@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { showToast } from '../components/common/toastService';
 
 const LOCAL_API_BASE_URL = 'http://localhost:5000';
 const ENV_API_BASE_URL = (
@@ -64,6 +65,28 @@ const api = axios.create({
   timeout: 15000,
 });
 
+const customerActionPrefixes = [
+  '/accounts',
+  '/account-type-requests',
+  '/beneficiaries',
+  '/transactions',
+  '/transfer-limits',
+  '/overdrafts',
+  '/loans',
+  '/loan-applications',
+  '/investments',
+  '/notifications',
+  '/users/profile',
+  '/users/kyc',
+  '/users/change-password',
+];
+
+const shouldToastCustomerAction = (config = {}) => {
+  const method = String(config.method || 'get').toLowerCase();
+  const url = String(config.url || '');
+  return method !== 'get' && customerActionPrefixes.some((prefix) => url.startsWith(prefix));
+};
+
 // ─── Request Interceptor: Attach JWT Token ────────────────────────────────────
 api.interceptors.request.use(
   (config) => {
@@ -78,7 +101,12 @@ api.interceptors.request.use(
 
 // ─── Response Interceptor: Handle 401 globally ───────────────────────────────
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (shouldToastCustomerAction(response.config) && response.data?.message) {
+      showToast(response.data.message, 'success');
+    }
+    return response;
+  },
   (error) => {
     if (error.response?.status === 401) {
       const url = error.config?.url || '';
@@ -95,6 +123,9 @@ api.interceptors.response.use(
           window.location.href = '/login';
         }
       }
+    }
+    if (shouldToastCustomerAction(error.config)) {
+      showToast(error.response?.data?.message || error.message || 'Action failed. Please try again.', 'error', { persist: true });
     }
     return Promise.reject(error);
   }

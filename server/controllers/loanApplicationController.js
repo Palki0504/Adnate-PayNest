@@ -37,6 +37,12 @@ const getConfiguredMaxAmount = (config) => {
   return Number(Math.max(0, ...values.map((amount) => Number(amount) || 0)));
 };
 
+const toNonNegativeNumber = (value) => {
+  const number = Number(value || 0);
+  if (!Number.isFinite(number)) return 0;
+  return Math.max(0, number);
+};
+
 const BLOCKING_LOAN_STATUSES = ['Pending', 'Submitted', 'Under Review', 'More Info Required', 'Approved', 'Active', 'Disbursed'];
 const READ_ONLY_APPLICATION_STATUSES = ['Pending', 'Submitted', 'Under Review', 'Approved', 'Rejected'];
 
@@ -93,7 +99,7 @@ const getBootstrap = async (req, res) => {
     Account.find({ userId: req.user._id, status: 'active' }).lean(),
     LoanRule.find({ status: 'Active' }).lean().then((rules) => rules.length ? rules : LoanConfig.find({ isActive: true }).lean()),
     LoanApplicationDraft.findOne({ userId: req.user._id }).lean(),
-    Loan.find({ userId: req.user._id, status: { $in: BLOCKING_LOAN_STATUSES } }).select('loanType loanNumber status customerId').lean(),
+    Loan.find({ userId: req.user._id, status: { $in: BLOCKING_LOAN_STATUSES } }).select('loanType loanNumber status customerId monthlyEMI outstandingBalance').lean(),
   ]);
   const profile = {
     customerId: user.customerId || String(user._id),
@@ -183,6 +189,9 @@ const saveDraft = async (req, res) => {
       return res.status(409).json({ success: false, message: duplicateLoanTypeMessage(config.displayName || loanDetails.loanType), existingLoan: blockingLoan });
     }
     const requestedAmount = Number(loanDetails.loanAmount);
+    if (!Number.isFinite(requestedAmount) || requestedAmount <= 0) {
+      return res.status(400).json({ success: false, message: 'Enter a valid loan amount.' });
+    }
     const minAmount = Number(config.minAmount || 10000);
     const maxAmount = getConfiguredMaxAmount(config);
     if (requestedAmount < minAmount) {
@@ -231,6 +240,20 @@ const submitApplication = async (req, res) => {
     ]);
     if (!account || !config) return res.status(400).json({ success: false, message: 'Invalid account or loan product.' });
 
+    const existingCustomerLoans = await Loan.find({
+      userId: req.user._id,
+      status: { $in: BLOCKING_LOAN_STATUSES },
+    }).select('monthlyEMI status').lean();
+    const portalExistingEMI = existingCustomerLoans.reduce(
+      (sum, loan) => sum + toNonNegativeNumber(loan.monthlyEMI),
+      0
+    );
+    const portalOverdraftLimit = toNonNegativeNumber(account.overdraftLimit);
+    const portalOverdraftUsed = toNonNegativeNumber(account.overdraftUsed);
+    const portalOverdraftUtilization = portalOverdraftLimit > 0
+      ? Math.min(100, Math.round((portalOverdraftUsed / portalOverdraftLimit) * 10000) / 100)
+      : 0;
+
     const requiredPersonalFields = ['name', 'dateOfBirth', 'gender', 'maritalStatus', 'mobileNumber', 'email', 'address', 'panNumber', 'aadhaarNumber'];
     const normalizedEmploymentType = String(employmentDetails.employmentType || '').trim().toLowerCase();
     const normalizedLoanType = String(loanDetails.loanType || '').trim().toLowerCase();
@@ -247,7 +270,14 @@ const submitApplication = async (req, res) => {
       existingEMI: 0,
       monthlyExpenses: 0,
       overdraftUtilization: 0,
-    } : employmentDetails;
+    } : {
+      ...employmentDetails,
+      monthlyIncome: toNonNegativeNumber(employmentDetails.monthlyIncome),
+      workExperience: toNonNegativeNumber(employmentDetails.workExperience),
+      existingEMI: portalExistingEMI,
+      monthlyExpenses: toNonNegativeNumber(employmentDetails.monthlyExpenses),
+      overdraftUtilization: portalOverdraftUtilization,
+    };
     const requiredEmploymentFields = isStudentApplicant
       ? ['employmentType']
       : ['employmentType', 'organizationName', 'designation', 'monthlyIncome', 'workExperience', 'officeAddress', 'existingEMI', 'monthlyExpenses', 'overdraftUtilization'];
@@ -274,6 +304,9 @@ const submitApplication = async (req, res) => {
     }
 
     const principal = Number(loanDetails.loanAmount);
+    if (!Number.isFinite(principal) || principal <= 0) {
+      return res.status(400).json({ success: false, message: 'Enter a valid loan amount.' });
+    }
     const tenureValue = Number(loanDetails.tenure);
     const tenureUnit = loanDetails.tenureUnit;
     if (!['months', 'years'].includes(tenureUnit)) {
@@ -383,7 +416,8 @@ const submitApplication = async (req, res) => {
     await application.save();
     await LoanApplicationDraft.deleteOne({ userId: user._id });
 
-    await Notification.create({
+    try {
+      await Notification.create({
       userId: user._id,
       title: 'Loan Application Submitted',
       message: `Your ${config.displayName} application for ₹${principal.toLocaleString('en-IN')} has been submitted.`,
@@ -400,7 +434,7 @@ const submitApplication = async (req, res) => {
       priority: 'medium',
       link: '/manager-dashboard/loans',
     })));
-    if (user.email) {
+      if (user.email) {
       await sendLoanApplicationStatusEmail(user.email, {
         heading: 'Loan Application Submitted',
         customerName: user.name,
@@ -411,6 +445,9 @@ const submitApplication = async (req, res) => {
           ['Status', 'Submitted'],
         ],
       }).catch(() => {});
+      }
+    } catch (notificationError) {
+      console.error('Loan application notification failed:', notificationError.message);
     }
 
     res.status(201).json({ success: true, message: 'Loan application submitted successfully.', application });

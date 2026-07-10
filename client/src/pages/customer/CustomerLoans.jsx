@@ -3,7 +3,7 @@ import {
   Box, Card, CardContent, Typography, Grid, Alert, Button, TextField,
   MenuItem, Tabs, Tab, CircularProgress, Chip, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Slider, Dialog, DialogTitle,
-  DialogContent, DialogActions, Paper, Snackbar
+  DialogContent, DialogActions, Paper
 } from '@mui/material';
 import {
   AccountBalanceWallet, Calculate, ListAlt, Info,
@@ -14,10 +14,11 @@ import {
 } from '@mui/icons-material';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
-import { loanAPI, accountAPI } from '../../services/api';
+import { loanAPI, accountAPI, loanApplicationAPI } from '../../services/api';
 import EMICalculator from './EMICalculator';
 import ApplyLoanWizard from './ApplyLoanWizard';
 import { getDisplayName } from '../../utils/textFormat';
+import { useToast } from '../../components/common/GlobalToastProvider';
 
 const formatCurrency = (v) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(v || 0);
@@ -43,7 +44,7 @@ const toLoanTypeLabel = (value) => String(value || '')
   .replace(/[-_]+/g, ' ')
   .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-const canUseLoanPaymentActions = (loan) => ['Approved', 'Disbursed'].includes(loan?.status) && Number(loan?.outstandingBalance || 0) > 0;
+const canUseLoanPaymentActions = (loan) => loan?.status === 'Disbursed' && Number(loan?.outstandingBalance || 0) > 0;
 
 const whiteFieldSx = {
   bgcolor: '#fff',
@@ -154,20 +155,22 @@ const bankingActionButtonSx = (color) => ({
 });
 
 const loanStatusSx = (status) => {
+  const displayStatus = status === 'Approved' ? 'Disbursed' : status;
   const palette = {
     Disbursed: { bgcolor: '#dcfce7', color: '#15803d', border: '#86efac' },
-    Approved: { bgcolor: '#ede9fe', color: '#6d28d9', border: '#c4b5fd' },
     'Under Review': { bgcolor: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
     Submitted: { bgcolor: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
     Rejected: { bgcolor: '#fee2e2', color: '#dc2626', border: '#fca5a5' },
-    Closed: { bgcolor: '#e2e8f0', color: '#475569', border: '#cbd5e1' },
+    Closed: { bgcolor: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' },
     Settled: { bgcolor: '#e2e8f0', color: '#475569', border: '#cbd5e1' },
     'Fully Paid': { bgcolor: '#dcfce7', color: '#15803d', border: '#86efac' },
     'More Info Required': { bgcolor: '#ffedd5', color: '#c2410c', border: '#fdba74' },
   };
-  const value = palette[status] || palette.Submitted;
+  const value = palette[displayStatus] || palette.Submitted;
   return { bgcolor: value.bgcolor, color: value.color, border: `1px solid ${value.border}`, fontWeight: 800, borderRadius: '8px' };
 };
+
+const displayLoanStatus = (status) => status === 'Approved' ? 'Disbursed' : status;
 
 const loanTypeVisual = (type) => {
   const visuals = {
@@ -179,11 +182,22 @@ const loanTypeVisual = (type) => {
   return visuals[type] || { icon: <AccountBalanceWallet fontSize="small" />, color: '#2563eb', bg: '#eff6ff', label: `${type || 'Loan'} Loan` };
 };
 
+const applicationStatusLabel = (status) => (
+  status === 'Approved'
+    ? 'Disbursed'
+    : ['Pending', 'Submitted', 'Under Review'].includes(status)
+    ? 'Pending Manager Approval'
+    : status || 'Pending Manager Approval'
+);
+
 const CustomerLoans = () => {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [loans, setLoans] = useState([]);
+  const [applications, setApplications] = useState([]);
+  const [selectedApplication, setSelectedApplication] = useState(null);
   const [selectedLoanId, setSelectedLoanId] = useState('');
   const [loanDetails, setLoanDetails] = useState(null);
   const [emiHistory, setEmiHistory] = useState([]);
@@ -232,8 +246,10 @@ const CustomerLoans = () => {
 
       const loanRes = await loanAPI.getMyLoans();
       setLoans(loanRes.data.loans || []);
+      const applicationRes = await loanApplicationAPI.getMine();
+      setApplications(applicationRes.data.applications || []);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load banking details.');
+      toast.error(err.response?.data?.message || 'Failed to load banking details.');
     } finally {
       setLoading(false);
     }
@@ -242,6 +258,14 @@ const CustomerLoans = () => {
   useEffect(() => {
     fetchAccountsAndLoans();
   }, []);
+
+  useEffect(() => {
+    if (success) toast.success(success);
+  }, [success, toast]);
+
+  useEffect(() => {
+    if (error) toast.error(error);
+  }, [error, toast]);
 
   const handleTabChange = async (event, newValue) => {
     setError('');
@@ -256,7 +280,7 @@ const CustomerLoans = () => {
       const preferredLoan = loans[0];
 
       if (!preferredLoan) {
-        setError('No loan is available to display.');
+        toast.warning('No loan is available to display.');
         setActiveTab(2);
         return;
       }
@@ -329,7 +353,7 @@ const CustomerLoans = () => {
         purpose,
         linkedAccountId
       });
-      setSuccess(res.data.message || 'Loan application submitted successfully!');
+      toast.success(res.data.message || 'Loan application submitted successfully!');
       // Reset form
       setPurpose('');
       setMonthlyIncome('');
@@ -340,7 +364,7 @@ const CustomerLoans = () => {
       // Switch tab to My Loans
       setTimeout(() => setActiveTab(2), 1500);
     } catch (err) {
-      setError(err.response?.data?.message || 'Loan application failed.');
+      toast.error(err.response?.data?.message || 'Loan application failed.');
     } finally {
       setLoading(false);
     }
@@ -357,13 +381,18 @@ const CustomerLoans = () => {
       setEmiHistory(res.data.amortizationSchedule || []);
       setActiveTab(targetTab);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to fetch loan details.');
+      toast.error(err.response?.data?.message || 'Failed to fetch loan details.');
     } finally {
       setLoading(false);
     }
   };
 
   const viewLoanDetails = (id) => loadLoanDetails(id, 3);
+
+  const handleLoanWizardSubmitted = async () => {
+    await fetchAccountsAndLoans();
+    setActiveTab(2);
+  };
 
   const openEMIPayment = async (emi) => {
     setPaymentEMI(emi);
@@ -855,7 +884,7 @@ const CustomerLoans = () => {
     doc.save(`Repayment_Amortization_${toPlainPdfText(loanDetails.loanNumber)}.pdf`);
   };
 
-  const activeLoanCards = loans.filter((loan) => ['Approved', 'Disbursed'].includes(loan.status));
+  const activeLoanCards = loans.filter((loan) => loan.status === 'Disbursed');
   const selectedPaymentLoan = loanDetails && selectedLoanId === loanDetails._id ? loanDetails : null;
 
   return (
@@ -866,14 +895,6 @@ const CustomerLoans = () => {
           Apply for new credit lines, calculate plans, manage payments, and download sanction/agreement documents.
         </Typography>
       </Box>
-
-      {error && <Alert severity="error" sx={{ mb: 3, borderRadius: '10px' }}>{error}</Alert>}
-      <Snackbar open={Boolean(success)} autoHideDuration={4500} onClose={() => setSuccess('')} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
-        <Alert severity="success" variant="filled" onClose={() => setSuccess('')}>{success}</Alert>
-      </Snackbar>
-      <Snackbar open={Boolean(error)} autoHideDuration={4500} onClose={() => setError('')} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
-        <Alert severity="error" variant="filled" onClose={() => setError('')}>{error}</Alert>
-      </Snackbar>
 
       <Paper sx={{
         bgcolor: '#fff',
@@ -912,7 +933,7 @@ const CustomerLoans = () => {
         </Tabs>
 
         {/* Tab 0: Apply for Loan */}
-        {activeTab === 0 && <ApplyLoanWizard onSubmitted={fetchAccountsAndLoans} />}
+        {activeTab === 0 && <ApplyLoanWizard onSubmitted={handleLoanWizardSubmitted} />}
         {false && (
           <Box sx={{ p: 3 }}>
             <form onSubmit={handleApply}>
@@ -1094,6 +1115,50 @@ const CustomerLoans = () => {
         {/* Tab 2: My Loans */}
         {activeTab === 2 && (
           <Box sx={{ p: { xs: 1.5, md: 2.5 } }}>
+            <Paper sx={{ bgcolor: '#fff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 10px 28px rgba(15,23,42,.1)', overflow: 'hidden', mb: 2.5 }}>
+              <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box sx={{ width: 46, height: 46, display: 'grid', placeItems: 'center', borderRadius: '13px', bgcolor: '#fff7ed', color: '#ea580c' }}><Description /></Box>
+                <Box>
+                  <Typography sx={{ color: '#0B1F4D', fontWeight: 900, fontSize: '1.15rem' }}>My Loan Applications</Typography>
+                  <Typography sx={{ color: '#64748b', fontSize: '.84rem', mt: .3 }}>Track requests submitted for manager approval.</Typography>
+                </Box>
+              </Box>
+              <TableContainer sx={{ width: '100%', maxWidth: '100%', overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: 980 }}>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: '#0B1F4D' }}>
+                      {['Request ID', 'Submitted On', 'Loan Type', 'Amount', 'Tenure', 'Status', 'Action'].map((h) => (
+                        <TableCell key={h} sx={{ color: '#fff', borderColor: '#163873', fontWeight: 800, py: 1.55, whiteSpace: 'nowrap' }}>{h}</TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {applications.map((application, index) => (
+                      <TableRow key={application._id} sx={{ bgcolor: index % 2 ? '#f8fafc' : '#fff', '& td': { color: '#334155', borderBottom: '1px solid #e2e8f0', py: 1.55 }, '&:hover': { bgcolor: '#eff6ff' } }}>
+                        <TableCell sx={{ fontWeight: 900, fontFamily: 'monospace', color: '#2563eb !important' }}>{String(application._id).slice(-10).toUpperCase()}</TableCell>
+                        <TableCell>{formatDate(application.appliedAt || application.createdAt)}</TableCell>
+                        <TableCell sx={{ fontWeight: 800 }}>{toLoanTypeLabel(application.loanType)}</TableCell>
+                        <TableCell sx={{ fontWeight: 800 }}>{formatCurrency(application.loanAmount)}</TableCell>
+                        <TableCell>{application.tenureValue || application.tenure} {application.tenureUnit || 'months'}</TableCell>
+                        <TableCell><Chip size="small" label={applicationStatusLabel(application.status)} sx={loanStatusSx(application.status)} /></TableCell>
+                        <TableCell>
+                          <Button variant="outlined" size="small" startIcon={<Visibility />} onClick={() => setSelectedApplication(application)} sx={{ color: '#0B1F4D', borderColor: '#0B1F4D', borderRadius: '9px', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            View Submitted Details
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {applications.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={7} align="center" sx={{ py: 5, color: '#64748b' }}>
+                          No loan applications submitted yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Paper>
             <Paper sx={{ bgcolor: '#fff', color: '#0f172a', border: '1px solid #e2e8f0', borderRadius: '16px', boxShadow: '0 10px 28px rgba(15,23,42,.1)', overflow: 'hidden' }}>
               <Box sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 1.5 }}>
                 <Box sx={{ width: 46, height: 46, display: 'grid', placeItems: 'center', borderRadius: '13px', bgcolor: '#eff6ff', color: '#0B1F4D' }}><ListAlt /></Box>
@@ -1127,7 +1192,7 @@ const CustomerLoans = () => {
                         <TableCell sx={{ fontWeight: 700 }}>{l.approvedAmount ? formatCurrency(l.approvedAmount) : '-'}</TableCell>
                         <TableCell sx={{ color: `${Number(l.outstandingBalance) === 0 ? '#16a34a' : '#ef4444'} !important`, fontWeight: 900 }}>{l.approvedAmount || l.status === 'Closed' ? formatCurrency(l.outstandingBalance) : '-'}</TableCell>
                         <TableCell>
-                          <Chip size="small" label={l.status} sx={loanStatusSx(l.status)} />
+                          <Chip size="small" label={displayLoanStatus(l.status)} sx={loanStatusSx(l.status)} />
                         </TableCell>
                         <TableCell>{formatDate(l.createdAt)}</TableCell>
                         <TableCell>
@@ -1330,7 +1395,7 @@ const CustomerLoans = () => {
                               <Typography sx={{ color: '#64748b', fontWeight: 700, fontSize: '.84rem', mt: .35 }}>{visual.label || toLoanTypeLabel(loan.loanType)}</Typography>
                             </Box>
                           </Box>
-                          <Chip size="small" label={loan.status} sx={loanStatusSx(loan.status)} />
+                          <Chip size="small" label={displayLoanStatus(loan.status)} sx={loanStatusSx(loan.status)} />
                         </Box>
                         <Grid container spacing={1.4}>
                           {[
@@ -1725,6 +1790,40 @@ const CustomerLoans = () => {
           <Button onClick={handleForeclose} disabled={fullRepaymentLoading || !fullRepaymentQuote || !fullRepaymentAccountId} variant="outlined" startIcon={fullRepaymentLoading ? <CircularProgress size={16} /> : <Close />} sx={bankingActionButtonSx('#0B1F4D')}>
             {fullRepaymentLoading ? 'Processing...' : 'Close Loan Now'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(selectedApplication)} onClose={() => setSelectedApplication(null)} fullWidth maxWidth="md" PaperProps={{ sx: { bgcolor: '#fff', color: '#0f172a', borderRadius: '18px', boxShadow: '0 24px 60px rgba(15,23,42,.22)' } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#0B1F4D' }}>Submitted Loan Application</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2, borderRadius: '12px' }}>
+            This application is read-only after submission. You can continue using the portal and track manager approval here.
+          </Alert>
+          <Grid container spacing={1.5}>
+            {selectedApplication && [
+              ['Request ID', String(selectedApplication._id).slice(-10).toUpperCase()],
+              ['Status', applicationStatusLabel(selectedApplication.status)],
+              ['Submitted On', formatDate(selectedApplication.appliedAt || selectedApplication.createdAt)],
+              ['Loan Type', toLoanTypeLabel(selectedApplication.loanType)],
+              ['Amount', formatCurrency(selectedApplication.loanAmount)],
+              ['Tenure', `${selectedApplication.tenureValue || selectedApplication.tenure} ${selectedApplication.tenureUnit || 'months'}`],
+              ['Purpose', selectedApplication.purpose],
+              ['Repayment Account', selectedApplication.accountNumber],
+              ['Monthly Income', formatCurrency(selectedApplication.employmentDetails?.monthlyIncome)],
+              ['Existing EMI', formatCurrency(selectedApplication.employmentDetails?.existingEMI)],
+              ['Overdraft Use', `${selectedApplication.employmentDetails?.overdraftUtilization || 0}%`],
+            ].map(([label, value]) => (
+              <Grid item xs={12} sm={6} key={label}>
+                <Paper sx={{ p: 1.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                  <Typography sx={{ color: '#64748b', fontWeight: 800, fontSize: '.75rem' }}>{label}</Typography>
+                  <Typography sx={{ color: '#0f172a', fontWeight: 900, mt: .35 }}>{value || '-'}</Typography>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setSelectedApplication(null)} sx={{ color: '#0B1F4D', fontWeight: 900 }}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

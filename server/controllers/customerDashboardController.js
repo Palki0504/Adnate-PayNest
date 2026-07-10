@@ -8,7 +8,7 @@ const Notification = require('../models/Notification');
 const { ensureEMISchedule } = require('./loanController');
 const { getActiveAccountsForUser } = require('../utils/accountRecovery');
 
-const activeLoanStatuses = ['Approved', 'Disbursed'];
+const activeLoanStatuses = ['Disbursed'];
 const activeInvestmentStatuses = ['Active'];
 
 const sumBy = (items, selector) =>

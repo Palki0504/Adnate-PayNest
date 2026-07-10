@@ -296,7 +296,7 @@ const generateAmortizationSchedule = (principal, annualRate, tenureMonths, start
 
 const ensureEMISchedule = async (loan) => {
   const existingPayments = await EMIPayment.find({ loanId: loan._id }).sort({ emiNumber: 1 });
-  if (existingPayments.length > 0 || !['Approved', 'Disbursed'].includes(loan.status) || !loan.approvedAmount) {
+  if (existingPayments.length > 0 || loan.status !== 'Disbursed' || !loan.approvedAmount) {
     return existingPayments;
   }
 
@@ -673,10 +673,10 @@ const payEMI = async (req, res) => {
     const loan = await Loan.findOne({
       _id: req.params.id,
       userId: req.user._id,
-      status: { $in: ['Approved', 'Disbursed'] },
+      status: 'Disbursed',
     });
     if (!loan) {
-      return res.status(404).json({ success: false, message: 'Active approved or disbursed loan not found.' });
+      return res.status(404).json({ success: false, message: 'Active disbursed loan not found.' });
     }
 
     await ensureEMISchedule(loan);
@@ -834,6 +834,19 @@ const payEMI = async (req, res) => {
       loan.status = 'Closed';
       loan.closedAt = paymentDate;
       loan.nextEMIDueDate = null;
+      await EMIPayment.updateMany(
+        { loanId: loan._id, status: { $in: ['Pending', 'Failed', 'Missed', 'Processing', 'PartiallyPaid'] } },
+        {
+          $set: {
+            status: 'Settled',
+            paidAt: paymentDate,
+            paymentMode: 'Loan EMI Closure',
+            transactionRef,
+            outstandingAfter: 0,
+            failureReason: '',
+          },
+        }
+      );
     }
     await loan.save();
     paymentCommitted = true;
@@ -911,7 +924,7 @@ const makePartPaymentLegacy = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Valid payment amount is required.' });
     }
 
-    const loan = await Loan.findOne({ _id: req.params.id, userId: req.user._id, status: { $in: ['Approved', 'Disbursed'] } });
+    const loan = await Loan.findOne({ _id: req.params.id, userId: req.user._id, status: 'Disbursed' });
     if (!loan) {
       return res.status(404).json({ success: false, message: 'Active loan not found.' });
     }
@@ -1006,7 +1019,7 @@ const makePartPayment = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Please select an account for part payment.' });
     }
 
-    const loan = await Loan.findOne({ _id: req.params.id, userId: req.user._id, status: { $in: ['Approved', 'Disbursed'] } });
+    const loan = await Loan.findOne({ _id: req.params.id, userId: req.user._id, status: 'Disbursed' });
     if (!loan) {
       return res.status(404).json({ success: false, message: 'Active loan not found.' });
     }
@@ -1167,7 +1180,7 @@ const makePartPayment = async (req, res) => {
 
 const getFullRepaymentQuote = async (req, res) => {
   try {
-    const loan = await Loan.findOne({ _id: req.params.id, userId: req.user._id, status: { $in: ['Approved', 'Disbursed'] } });
+    const loan = await Loan.findOne({ _id: req.params.id, userId: req.user._id, status: 'Disbursed' });
     if (!loan) {
       return res.status(404).json({ success: false, message: 'Active loan not found.' });
     }
@@ -1192,7 +1205,7 @@ const closeFullLoan = async (req, res) => {
       {
         _id: req.params.id,
         userId: req.user._id,
-        status: { $in: ['Approved', 'Disbursed'] },
+        status: 'Disbursed',
         outstandingBalance: { $gt: 0 },
         closureProcessing: { $ne: true },
       },
@@ -1568,7 +1581,6 @@ const approveLoan = async (req, res) => {
     const now = new Date();
     const emiStartDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
 
-    loan.status = 'Approved';
     loan.approvedAmount = approvedAmount;
     loan.interestRate = interestRate;
     loan.monthlyEMI = emi;
@@ -1580,18 +1592,19 @@ const approveLoan = async (req, res) => {
     loan.emiStartDate = emiStartDate;
     loan.nextEMIDueDate = emiStartDate;
     loan.managerNote = req.body.note || loan.managerNote;
-    await loan.save();
-
     // Disburse into linked account
     const account = await Account.findById(loan.linkedAccountId);
-    if (account) {
-      account.balance += approvedAmount;
-      await account.save();
-
-      loan.status = 'Disbursed';
-      loan.disbursedAt = new Date();
+    if (!account) {
+      loan.status = 'Failed';
       await loan.save();
+      return res.status(400).json({ success: false, message: 'Linked customer account was not found. Loan disbursement failed.' });
     }
+    account.balance += approvedAmount;
+    await account.save();
+
+    loan.status = 'Disbursed';
+    loan.disbursedAt = new Date();
+    await loan.save();
 
     // Generate EMI payment records (amortization)
     const schedule = generateAmortizationSchedule(approvedAmount, interestRate, loan.tenure, emiStartDate);
@@ -1736,10 +1749,17 @@ const requestAdditionalInfo = async (req, res) => {
 const getLoanMonitoring = async (req, res) => {
   try {
     const now = new Date();
-    const sevenDaysFromNow = new Date(now.getTime() + 7 * 86400000);
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOfWindow = new Date(startOfToday);
+    endOfWindow.setDate(endOfWindow.getDate() + 7);
+    endOfWindow.setHours(23, 59, 59, 999);
 
     // Active loans
     const activeLoans = await Loan.countDocuments({ status: 'Disbursed' });
+    const closedLoans = await Loan.countDocuments({ status: 'Closed' });
+    const pendingApplications = await Loan.countDocuments({ status: { $in: ['Submitted', 'Under Review', 'More Info Required'] } });
+    const rejectedApplications = await Loan.countDocuments({ status: 'Rejected' });
 
     // Total outstanding
     const outstandingAgg = await Loan.aggregate([
@@ -1749,15 +1769,30 @@ const getLoanMonitoring = async (req, res) => {
     const totalOutstanding = outstandingAgg[0]?.total || 0;
 
     // Upcoming EMIs (next 7 days)
-    const upcomingEMIs = await EMIPayment.find({
-      status: 'Pending',
-      dueDate: { $gte: now, $lte: sevenDaysFromNow },
+    const upcomingEMIDocs = await EMIPayment.find({
+      status: { $in: ['Pending', 'Processing', 'Failed'] },
+      dueDate: { $gte: startOfToday, $lte: endOfWindow },
     })
-      .populate('loanId', 'loanNumber loanType')
+      .populate({ path: 'loanId', select: 'loanNumber loanType status', match: { status: 'Disbursed' } })
       .populate('userId', 'name customerId')
       .sort({ dueDate: 1 })
       .limit(50)
       .lean();
+    const upcomingEMIs = upcomingEMIDocs
+      .filter((emi) => emi.loanId)
+      .map((emi) => {
+        const due = new Date(emi.dueDate);
+        due.setHours(0, 0, 0, 0);
+        const daysLeft = Math.ceil((due - startOfToday) / 86400000);
+        const paymentStatus = daysLeft < 0
+          ? 'Overdue'
+          : daysLeft === 0
+            ? 'Due Today'
+            : emi.status === 'Processing'
+              ? 'Auto-Debit Scheduled'
+              : 'Due Soon';
+        return { ...emi, daysLeft, paymentStatus };
+      });
 
     // Missed EMIs
     const missedEMIs = await EMIPayment.find({ status: 'Missed' })
@@ -1832,8 +1867,12 @@ const getLoanMonitoring = async (req, res) => {
       success: true,
       monitoring: {
         activeLoans,
+        closedLoans,
+        pendingApplications,
+        rejectedApplications,
         totalOutstanding,
         upcomingEMIs,
+        upcomingEMICount: upcomingEMIs.length,
         missedEMIs,
         missedEMICount,
         delinquentLoans,
@@ -1867,7 +1906,7 @@ const getLoanAnalytics = async (req, res) => {
       penaltyAgg,
     ] = await Promise.all([
       Loan.countDocuments(),
-      Loan.countDocuments({ status: { $in: ['Approved', 'Disbursed'] } }),
+      Loan.countDocuments({ status: 'Disbursed' }),
       Loan.countDocuments({ status: 'Rejected' }),
       Loan.countDocuments({ status: 'Disbursed' }),
       Loan.countDocuments({ status: 'Closed' }),
@@ -1955,7 +1994,7 @@ const getLoanChartData = async (req, res) => {
           _id: { year: { $year: '$createdAt' }, month: { $month: '$createdAt' } },
           applications: { $sum: 1 },
           approvedAmount: {
-            $sum: { $cond: [{ $in: ['$status', ['Approved', 'Disbursed', 'Closed']] }, '$approvedAmount', 0] },
+            $sum: { $cond: [{ $in: ['$status', ['Disbursed', 'Closed']] }, '$approvedAmount', 0] },
           },
         },
       },
@@ -2076,9 +2115,9 @@ const getAdminLoanOverview = async (req, res) => {
       loanDistribution,
       emiCollectionTrend,
     ] = await Promise.all([
-      Loan.distinct('userId', { status: { $in: ['Approved', 'Disbursed'] } }),
+      Loan.distinct('userId', { status: 'Disbursed' }),
       Loan.aggregate([
-        { $match: { status: { $in: ['Approved', 'Disbursed', 'Closed'] } } },
+        { $match: { status: { $in: ['Disbursed', 'Closed'] } } },
         { $group: { _id: null, total: { $sum: { $ifNull: ['$approvedAmount', '$amount'] } } } },
       ]),
       EMIPayment.aggregate([
@@ -2392,7 +2431,6 @@ const downloadAdminCustomerLoansMonthlyReport = async (req, res) => {
     const countByStatus = (status) => loans.filter((loan) => loan.status === status).length;
     sendXlsxReport(res, `adnate-customer-loans-monthly-${range.label}.xlsx`, 'Monthly Customer Loans Report', range.label, [
       ['Total Applications', loans.length],
-      ['Approved Loans', countByStatus('Approved')],
       ['Rejected Loans', countByStatus('Rejected')],
       ['Disbursed Loans', countByStatus('Disbursed')],
       ['Closed Loans', countByStatus('Closed')],

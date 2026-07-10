@@ -4,7 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import {
   Box, Drawer, AppBar, Toolbar, List, ListItem, ListItemButton,
   ListItemIcon, ListItemText, Typography, IconButton, Avatar,
-  Badge, Tooltip, Divider, useMediaQuery, useTheme, Menu, MenuItem, Alert,
+  Badge, Tooltip, Divider, useMediaQuery, useTheme, Menu, MenuItem,
   Collapse,
 } from '@mui/material';
 import {
@@ -16,6 +16,7 @@ import {
 import { logout } from '../../redux/slices/authSlice';
 import PayNestLogo from '../../components/common/PayNestLogo';
 import { getDisplayName } from '../../utils/textFormat';
+import ToastContextProvider, { useToast } from '../../components/common/GlobalToastProvider';
 
 // Lazy-loaded sub-pages
 import DashboardHome from './DashboardHome';
@@ -58,6 +59,7 @@ const navItems = [
 const CustomerDashboard = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const toast = useToast();
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -69,7 +71,6 @@ const CustomerDashboard = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [investmentsExpanded, setInvestmentsExpanded] = useState(false);
-  const [lockedAlert, setLockedAlert] = useState('');
   const bankingAccess = !!(user?.profileCompleted && user?.kycStatus === 'Approved');
   const publicCustomerPaths = ['', 'profile', 'notifications'];
 
@@ -94,10 +95,16 @@ const CustomerDashboard = () => {
     }
   }, [bankingAccess, currentPath, navigate]);
 
+  React.useEffect(() => {
+    if (user?.isTempPassword) {
+      toast.warning('Temporary password active. Open Profile to set a new password.');
+    }
+  }, [toast, user?.isTempPassword]);
+
   const isLockedPath = (path) => !bankingAccess && !publicCustomerPaths.includes(path);
 
   const handleLockedClick = () => {
-    setLockedAlert(lockMessage);
+    toast.warning(lockMessage);
     navigate('/customer-dashboard/profile');
     if (isMobile) setMobileOpen(false);
   };
@@ -364,31 +371,6 @@ const CustomerDashboard = () => {
 
         {/* Page Content */}
         <Box sx={{ flex: 1, overflow: 'auto', p: { xs: 2, sm: 3 } }}>
-          {user?.isTempPassword && (
-            <Alert
-              severity="warning"
-              onClick={() => navigate('/customer-dashboard/profile')}
-              sx={{
-                mb: 2,
-                cursor: 'pointer',
-                background: 'rgba(245,158,11,0.12)',
-                color: '#fcd34d',
-                border: '1px solid rgba(245,158,11,0.35)',
-                '& .MuiAlert-icon': { color: '#f59e0b' },
-              }}
-            >
-              Temporary password active — open Profile to set a new password.
-            </Alert>
-          )}
-          {lockedAlert && (
-            <Alert
-              severity="warning"
-              onClose={() => setLockedAlert('')}
-              sx={{ mb: 2, bgcolor: 'rgba(245,158,11,0.14)', color: '#fde68a', border: '1px solid rgba(245,158,11,0.35)', '& .MuiAlert-icon': { color: '#f59e0b' } }}
-            >
-              {lockedAlert}
-            </Alert>
-          )}
           <Routes>
             <Route index element={<DashboardHome />} />
             <Route path="accounts" element={<AccountSummary />} />
@@ -409,4 +391,11 @@ const CustomerDashboard = () => {
   );
 };
 
-export default CustomerDashboard;
+const CustomerDashboardWithToasts = () => (
+  <ToastContextProvider>
+    <CustomerDashboard />
+  </ToastContextProvider>
+);
+
+export default CustomerDashboardWithToasts;
+

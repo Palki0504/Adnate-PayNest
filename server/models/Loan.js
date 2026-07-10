@@ -90,7 +90,7 @@ const loanSchema = new mongoose.Schema(
     // ─── Status & Workflow ──────────────────────────────────────────────
     status: {
       type: String,
-      enum: ['Submitted', 'Under Review', 'More Info Required', 'Approved', 'Rejected', 'Disbursed', 'Closed'],
+      enum: ['Submitted', 'Under Review', 'More Info Required', 'Approved', 'Rejected', 'Disbursed', 'Closed', 'Failed'],
       default: 'Submitted',
     },
     eligibilityScore: {

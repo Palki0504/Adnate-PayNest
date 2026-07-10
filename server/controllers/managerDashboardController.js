@@ -67,7 +67,7 @@ const getManagerDashboard = async (req, res, next) => {
         { $match: { status: 'active' } },
         { $group: { _id: '$accountType', count: { $sum: 1 } } },
       ]),
-      Loan.countDocuments({ status: { $in: ['Approved', 'Disbursed'] } }),
+      Loan.countDocuments({ status: 'Disbursed' }),
       FixedDeposit.countDocuments({ status: 'Active' }),
       RecurringDeposit.countDocuments({ status: 'Active' }),
       User.countDocuments({ role: 'manager', isActive: true }),
